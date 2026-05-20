@@ -212,7 +212,84 @@ Before writing code, let's look at how the file structures translate:
 
 ---
 
-### 3.5 Environment Configuration Validation on Startup
+### 3.5 Proposed Project Directory Structure
+Below is the clean-architecture module layout mapping all directories and files built across this guide:
+
+```
+todo-app/
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+├── test/
+│   └── todos.e2e-spec.ts              ← E2E Tests
+├── src/
+│   ├── main.ts                        ← App Entrypoint
+│   ├── app.module.ts                  ← Global Module wiring
+│   ├── config/
+│   │   └── env.validation.ts          ← Startup Zod configuration validation
+│   ├── prisma/
+│   │   ├── prisma.module.ts           ← Global database connection module
+│   │   ├── prisma.service.ts          ← Injectable Prisma Client (with soft deletes)
+│   │   └── seeder.service.ts          ← Auto-bootstrapping database seeder
+│   ├── common/
+│   │   ├── context/
+│   │   │   └── tenant.context.ts      ← AsyncLocalStorage storage definition
+│   │   ├── decorators/
+│   │   │   ├── current-user.decorator.ts
+│   │   │   └── roles.decorator.ts
+│   │   ├── filters/
+│   │   │   └── prisma-exception.filter.ts  ← Centralized db constraint translation
+│   │   ├── guards/
+│   │   │   ├── jwt-auth.guard.ts
+│   │   │   └── roles.guard.ts
+│   │   ├── interceptors/
+│   │   │   ├── bigint.interceptor.ts
+│   │   │   └── transform.interceptor.ts
+│   │   ├── middleware/
+│   │   │   ├── logger.middleware.ts
+│   │   │   └── tenant.middleware.ts   ← Subdomain-based tenant identification
+│   │   ├── pipes/
+│   │   │   ├── parse-bigint.pipe.ts
+│   │   │   ├── parse-json.pipe.ts
+│   │   │   └── zod-validation.pipe.ts
+│   │   ├── services/
+│   │   │   └── email.service.ts       ← Nodemailer + EJS compiler service
+│   │   ├── templates/
+│   │   │   └── todo-notification.ejs  ← Notification template layout
+│   │   ├── utils/
+│   │   │   └── pagination.helper.ts   ← Offset/Limit builder & metadata response
+│   │   └── workers/
+│   │       └── outbox.worker.ts       ← Background Transactional Outbox processor
+│   └── modules/
+│       ├── auth/
+│       │   ├── auth.module.ts
+│       │   ├── auth.controller.ts
+│       │   ├── auth.service.ts
+│       │   ├── client.controller.ts   ← Form-data multipart validation controller
+│       │   └── dto/
+│       │       ├── register.dto.ts
+│       │       └── login.dto.ts
+│       ├── todo/
+│       │   ├── todo.module.ts
+│       │   ├── todo.controller.ts
+│       │   ├── todo.service.ts
+│       │   └── todo.service.spec.ts   ← Service Unit tests
+│       ├── file/
+│       │   ├── file.module.ts         ← Cloudinary client module
+│       │   ├── cloudinary.service.ts  ← Multipart image stream uploader
+│       │   └── profile.controller.ts  ← Profile avatar change route
+│       ├── billing/
+│       │   ├── billing.service.ts
+│       │   └── late-fee.service.ts    ← Cron-driven daily scheduler
+│       └── payment/
+│           ├── payment.controller.ts  ← Checkout redirect callbacks & IPN endpoints
+│           ├── payment.service.ts     ← State transition transaction blocks
+│           └── ssl-commerz.service.ts ← SSLCommerz gateway communications
+```
+
+---
+
+### 3.6 Environment Configuration Validation on Startup
 *   **What is it?**
     It is a configuration verification pipeline configured inside `@nestjs/config` that asserts all required `.env` values are present and conform to correct schema types (numbers, string formats) when the application bootstraps.
 *   **Why is it used?**
@@ -289,6 +366,172 @@ import { validateEnv } from './config/env.validation';
 export class AppModule {}
 ```
 If any variables declared in the `envSchema` are missing or incorrect, NestJS will throw an assertion error on startup, preventing the server from listening on an invalid configuration state.
+
+---
+
+### 3.7 Detailed Code Translations: Express (Eventra) vs. NestJS
+For developers transitioning from the **Eventra-Backend (Express)** architecture to **NestJS**, here is a detailed, code-by-code translation mapping core utilities:
+
+#### A. CatchAsync (Asynchronous Error Handler)
+In **Eventra**, async routes must be wrapped with a helper to pass rejected promises to `next()`:
+```typescript
+// Eventra (Express): src/shared/catchAsync.ts
+type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+export const catchAsync = (fn: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+};
+```
+In **NestJS**, `catchAsync` is completely obsolete. NestJS controllers natively support Promises and Observables. If a controller throws an error or rejects, NestJS automatically intercepts it and forwards it to the exception filter layer:
+```typescript
+// NestJS: Clean Controller standard
+@Get(':id')
+async getTodo(@Param('id', ParseBigIntPipe) id: bigint) {
+  // NestJS catches any throws/rejections here natively and forwards to global filters
+  return this.todoService.findOne(id);
+}
+```
+
+#### B. ValidateRequest (Zod Body Validation)
+In **Eventra**, request payloads are verified via inline schema-parsing middleware:
+```typescript
+// Eventra (Express): src/app/middlewares/validateRequest.ts
+const validateRequest = (schema: ZodObject<any>) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await schema.parseAsync({ body: req.body });
+        return next();
+    } catch (err) {
+        next(err);
+    }
+};
+```
+In **NestJS**, request validations are isolated from controllers using custom **Pipes**. The validation runs during the request binding phase:
+```typescript
+// NestJS: src/common/pipes/zod-validation.pipe.ts
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { Schema } from 'zod';
+
+@Injectable()
+export class ZodValidationPipe implements PipeTransform {
+  constructor(private schema: Schema) {}
+
+  transform(value: any) {
+    const result = this.schema.safeParse(value);
+    if (!result.success) {
+      throw new BadRequestException({
+        message: 'Validation failed',
+        errors: result.error.format(),
+      });
+    }
+    return result.data;
+  }
+}
+```
+Inject the pipe directly using the `@UsePipes` decorator:
+```typescript
+// NestJS: Controller Handler
+@Post('register')
+@UsePipes(new ZodValidationPipe(registerSchema))
+async register(@Body() registerDto: RegisterDto) {
+  return this.authService.register(registerDto);
+}
+```
+
+#### C. Authentication & Role Authorization (JWT + Cookie Checks)
+In **Eventra**, user authentication and authorization logic are coupled inside an Express middleware:
+```typescript
+// Eventra (Express): src/app/middlewares/auth.ts
+const auth = (...roles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const token = req.cookies["accessToken"];
+        if (!token) throw new ApiError(401, "You are not authorized!");
+        
+        const verifyUser = jwtHelper.verifyToken(token, config.jwt.jwt_secret);
+        req.user = verifyUser;
+
+        if (roles.length && !roles.includes(verifyUser.role)) {
+            throw new ApiError(401, "You are not authorized!");
+        }
+        next();
+    } catch (err) {
+        next(err);
+    }
+};
+```
+In **NestJS**, you separate authentication, authorization, and decorator bindings into discrete, single-responsibility components:
+1. **`JwtAuthGuard`**: Decodes the token, asserts authenticity, and binds the payload to the request context.
+2. **`RolesGuard`**: Reads metadata (using Nest's `Reflector`) to match against authenticated users.
+3. **`Roles` Decorator**: Attaches required roles metadata.
+4. **`CurrentUser` Decorator**: Safely retrieves the authenticated user from the request context.
+
+```typescript
+// NestJS: Declarative Guard & Decorator Setup
+@Controller('api/v1/todos')
+@UseGuards(JwtAuthGuard, RolesGuard) // Authenticate and check authorization
+export class TodoController {
+  
+  @Post()
+  @Roles('ADMIN', 'CREATOR') // Apply metadata
+  async createTodo(
+    @CurrentUser() user: JwtPayload, // Extract from request
+    @Body() dto: CreateTodoDto,
+  ) {
+    return this.todoService.create(dto, user.id);
+  }
+}
+```
+
+#### D. Pagination & Request Parameter Filtering
+In **Eventra**, pagination inputs are calculated using a static helper and filtered using a custom `pick` function:
+```typescript
+// Eventra (Express): src/helpers/paginationHelper.ts
+const calculatePagination = (options: IOptions): IOptionsResult => {
+    const page = Number(options.page) || 1;
+    const limit = Number(options.limit) || 9;
+    const skip = (page - 1) * limit;
+    const sortBy = options.sortBy || 'createdAt';
+    const sortOrder = options.sortOrder || 'desc';
+
+    return { page, limit, skip, sortBy, sortOrder };
+};
+```
+```typescript
+// Eventra (Express): Usage inside Controller
+const paginationOptions = paginationHelper.calculatePagination(pick(req.query, ['page', 'limit', 'sortBy', 'sortOrder']));
+```
+In **NestJS**, query parameters are bound using the `@Query()` decorator, validated/parsed using pipes (or custom utilities), and mapped to pagination filters:
+```typescript
+// NestJS: src/common/utils/pagination.helper.ts
+export class PaginationHelper {
+  static getPaginationOptions(options: { page?: string; limit?: string; sortBy?: string; sortOrder?: string }) {
+    const page = Math.max(Number(options.page) || 1, 1);
+    const limit = Math.max(Number(options.limit) || 10, 1);
+    const skip = (page - 1) * limit;
+
+    const sortBy = options.sortBy || 'created_at';
+    const sortOrder = options.sortOrder || 'desc';
+
+    return {
+      skip,
+      take: limit,
+      orderBy: { [sortBy]: sortOrder },
+    };
+  }
+}
+```
+In your controllers, simply bind inputs using parameter annotations:
+```typescript
+// NestJS: Pagination usage
+@Get()
+async getTodos(
+  @Query('page') page?: string,
+  @Query('limit') limit?: string,
+  @Query('sortBy') sortBy?: string,
+  @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+) {
+  const options = PaginationHelper.getPaginationOptions({ page, limit, sortBy, sortOrder });
+  return this.todoService.findAll(options);
+}
+```
 
 ---
 
@@ -1466,7 +1709,7 @@ export class TodoModule {}
 
 #### Step 1: Create the Cloudinary Service
 ```typescript
-// src/prisma/cloudinary.service.ts
+// src/modules/file/cloudinary.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import { ConfigService } from '@nestjs/config';
@@ -1504,6 +1747,7 @@ export class CloudinaryService {
 Apply the `FileInterceptor` directly to your controller routes:
 
 ```typescript
+// src/modules/file/profile.controller.ts
 import { Controller, Post, UseInterceptors, UploadedFile, UseGuards } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from './cloudinary.service';
