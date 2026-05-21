@@ -4,30 +4,25 @@ import {
   OnModuleDestroy,
   Logger,
 } from '@nestjs/common';
-
-import { ConfigService } from '@nestjs/config';
-
-import pg from 'pg';
 import { PrismaClient } from '@prisma/client';
+import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
-  constructor(private configService: ConfigService) {
-    const connectionString =
-      configService.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
+  constructor() {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL is missing');
+    }
     const pool = new pg.Pool({ connectionString });
     const adapter = new PrismaPg(pool);
+
     super({
       adapter,
-
       log: [
-        { emit: 'event', level: 'query' },
         { emit: 'stdout', level: 'error' },
         { emit: 'stdout', level: 'warn' },
       ],
