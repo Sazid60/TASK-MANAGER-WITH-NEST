@@ -2811,3 +2811,28 @@ To seed the database, run:
 npm run seed
 ```
 
+
+## 12. Routing & Error Handling
+
+### Welcome Route (`/`)
+The root path (`/`) is excluded from the global `api/v1` prefix. When accessed, it returns a structured welcome message:
+```json
+{
+  "success": true,
+  "message": "Welcome to NestJS Task Manager API!",
+  "version": "1.0.0"
+}
+```
+
+### Not Found Route (404)
+Any unhandled routes are caught globally by the `GlobalExceptionFilter`. When an invalid route is requested, it returns a clean, formatted 404 JSON response instead of the default NestJS HTML error:
+```json
+{
+  "success": false,
+  "message": "Cannot GET /invalid-route",
+  "error": {
+    "statusCode": 404,
+    "message": "Cannot GET /invalid-route"
+  }
+}
+```
