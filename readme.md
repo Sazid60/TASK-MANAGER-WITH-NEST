@@ -1,183 +1,201 @@
-# NestJS Task Manager: Complete Step-by-Step Implementation Guide
+# NestJS Task Manager: Complete Step-by-Step Production Guide
 
-This document contains the complete codebase, setup commands, and explanation for building a production-ready **NestJS** application integrated with **Prisma v7**, **PostgreSQL**, **Redis**, **Nodemailer (EJS)**, and **Rate Limiting**. It is designed as a learning resource to demonstrate the full capabilities and architecture of NestJS.
+This guide contains the complete, production-ready codebase and setup instructions for building a highly scalable and maintainable **NestJS** application. It integrates **Prisma v7**, **PostgreSQL**, **Redis**, **Nodemailer**, **Passport JWT**, and **Sliding-Window Rate Limiting**.
 
----
-
-## 1. Architectural Overview & Request Lifecycle
-
-NestJS uses a modular architecture where components are grouped into logical, reusable building blocks (**Modules**). Within each module, files are organized into **Controllers** (handling incoming requests and routes), **Services** (containing business logic), and **DTOs** (Data Transfer Objects for validation).
-
-### Request Lifecycle
-The request flows through several layers, each serving a specific security, validation, or processing purpose:
-
-```
-Request (from Client)
-  │
-  ├──► 1. Middleware (Rate limiting, Body parser, Cookie parser, Request logger)
-  │
-  ├──► 2. Guards (Auth Check: Is the user logged in? Do they have the required Role?)
-  │
-  ├──► 3. Interceptors (Before Controller logic starts: timing/logging)
-  │
-  ├──► 4. Pipes (ValidationPipe: Validate DTOs, parse/trim input fields)
-  │
-  ├──► 5. Controller (Route mapping, parameter parsing)
-  │
-  ├──► 6. Service (Database queries, external APIs, business rules)
-  │
-  ├──► 7. Controller return value
-  │
-  ├──► 8. Interceptors (After Controller logic finishes: formats standard responses)
-  │
-  ├──► 9. Exception Filters (Runs only if an error is thrown: formats standard error responses)
-  │
-  ▼
-Response (back to Client)
-```
+All codeblocks are fully defined, production-ready, and copy-pasteable.
 
 ---
 
-## 2. Directory & Highly Scalable Folder Structure
+## 1. Directory & Folder Structure
 
-To ensure the codebase remains clean, maintainable, and scalable, we organize our files using the following pattern:
+This structure separates concerns logically by grouping components into **infrastructure** layers (`prisma`, `redis`, `mail`, `config`), **common** helpers (decorators, guards, filters, interceptors, pipes, utils), and **modules** (business domains: auth, users, tasks).
 
 ```
-task-manager/
+src/
+├── common/
+│   ├── decorators/
+│   │   ├── current-user.decorator.ts
+│   │   ├── roles.decorator.ts
+│   │   ├── permissions.decorator.ts
+│   │   ├── public.decorator.ts
+│   │   └── api-paginated-response.decorator.ts
+│   ├── dto/
+│   │   ├── pagination.dto.ts
+│   │   ├── date-range.dto.ts
+│   │   └── paginated-response.dto.ts
+│   ├── enums/
+│   │   └── roles.enum.ts
+│   ├── filters/
+│   │   └── global-exception.filter.ts
+│   ├── guards/
+│   │   ├── jwt-auth.guard.ts
+│   │   ├── roles.guard.ts
+│   │   ├── permissions.guard.ts
+│   │   └── throttler.guard.ts
+│   ├── interceptors/
+│   │   └── response.interceptor.ts
+│   ├── interfaces/
+│   │   ├── jwt-payload.interface.ts
+│   │   └── paginated-result.interface.ts
+│   ├── pipes/
+│   │   └── validation.pipe.ts
+│   └── utils/
+│       ├── pagination.util.ts
+│       ├── date-range.util.ts
+│       └── hash.util.ts
+├── config/
+│   ├── app.config.ts
+│   ├── jwt.config.ts
+│   ├── redis.config.ts
+│   └── mail.config.ts
+├── modules/
+│   ├── auth/
+│   │   ├── auth.controller.ts
+│   │   ├── auth.service.ts
+│   │   ├── auth.module.ts
+│   │   ├── strategies/
+│   │   │   └── jwt.strategy.ts
+│   │   └── dto/
+│   │       ├── register.dto.ts
+│   │       ├── login.dto.ts
+│   │       ├── verify-otp.dto.ts
+│   │       └── refresh-token.dto.ts
+│   ├── users/
+│   │   ├── users.controller.ts
+│   │   ├── users.service.ts
+│   │   ├── users.module.ts
+│   │   └── dto/
+│   │       ├── update-user.dto.ts
+│   │       └── query-user.dto.ts
+│   └── tasks/
+│       ├── tasks.controller.ts
+│       ├── tasks.service.ts
+│       ├── tasks.module.ts
+│       └── dto/
+│           ├── create-task.dto.ts
+│           ├── update-task.dto.ts
+│           └── query-task.dto.ts
 ├── prisma/
-│   └── schema.prisma          # Database models (Prisma v7 schema)
-├── src/
-│   ├── main.ts                # Application entrypoint
-│   ├── app.module.ts          # Main application module
-│   ├── config/                # Configuration management
-│   │   ├── config.module.ts
-│   │   └── config.service.ts
-│   ├── common/                # Shared decorators, guards, filters, interceptors
-│   │   ├── decorators/
-│   │   │   ├── roles.decorator.ts
-│   │   │   └── user.decorator.ts
-│   │   ├── filters/
-│   │   │   └── global-exception.filter.ts
-│   │   ├── guards/
-│   │   │   ├── auth.guard.ts
-│   │   │   └── roles.guard.ts
-│   │   ├── interceptors/
-│   │   │   └── response.interceptor.ts
-│   │   ├── middlewares/
-│   │   │   └── rate-limit.middleware.ts
-│   │   └── pipes/
-│   │       └── trim.pipe.ts
-│   ├── helpers/               # Utility functions
-│   │   ├── cookies.helper.ts
-│   │   ├── jwt.helper.ts
-│   │   ├── pagination.helper.ts
-│   │   ├── pick.ts
-│   │   └── token.ts
-│   ├── prisma/                # Prisma ORM module
-│   │   ├── prisma.module.ts
-│   │   └── prisma.service.ts
-│   ├── redis/                 # Redis cache/store module (OTP)
-│   │   ├── redis.module.ts
-│   │   └── redis.service.ts
-│   ├── mail/                  # Nodemailer & EJS template module
-│   │   ├── templates/
-│   │   │   └── otp.ejs
-│   │   ├── mail.module.ts
-│   │   └── mail.service.ts
-│   └── modules/               # Feature modules
-│       ├── auth/              # Registration, Login, OTP verification
-│       │   ├── dto/
-│       │   │   ├── login.dto.ts
-│       │   │   ├── register.dto.ts
-│       │   │   └── verify-otp.dto.ts
-│       │   ├── auth.controller.ts
-│       │   ├── auth.service.ts
-│       │   ├── auth.module.ts
-│       │   └── seedAdmin.ts   # Automatically seeds Super Admin
-│       ├── user/              # User management (Admin only)
-│       │   ├── dto/
-│       │   │   └── update-user-status.dto.ts
-│       │   ├── user.controller.ts
-│       │   ├── user.service.ts
-│       │   └── user.module.ts
-│       └── task/              # Tasks CRUD & Filtering (User own tasks)
-│           ├── dto/
-│           │   ├── create-task.dto.ts
-│           │   ├── query-task.dto.ts
-│           │   └── update-task.dto.ts
-│           ├── task.controller.ts
-│           ├── task.service.ts
-│           └── task.module.ts
-└── test/                      # Testing files
-    ├── jest-e2e.json
-    ├── auth.e2e-spec.ts       # Authentication E2E tests
-    └── task.service.spec.ts   # Task Service unit tests
+│   ├── prisma.module.ts
+│   └── prisma.service.ts
+├── mail/
+│   ├── mail.module.ts
+│   └── mail.service.ts
+├── redis/
+│   ├── redis.module.ts
+│   └── redis.service.ts
+├── seed/
+│   └── seed.ts
+├── app.module.ts
+└── main.ts
 ```
 
 ---
 
-## 3. Step-by-Step Installation & Env Configuration
+## 2. Installation & Setup
 
-### Step 1: Install Dependencies
-Run the following commands in your terminal to install the correct packages:
+Initialize your NestJS application and install the core dependencies:
 
 ```bash
-# 1. Install regular dependencies
-npm install @nestjs/config ioredis nodemailer ejs bcryptjs jsonwebtoken class-validator class-transformer express-rate-limit cookie-parser http-status @prisma/client@7
+# 1. Install NestJS CLI globally
+npm i -g @nestjs/cli
 
-# 2. Install dev dependencies
-npm install -D prisma@7 @types/nodemailer @types/ejs @types/bcryptjs @types/jsonwebtoken @types/cookie-parser @types/express @nestjs/testing ts-jest jest
+# 2. Create project
+nest new todo-app
+cd todo-app
+
+# 3. Core dependencies
+npm install \
+  @nestjs/config \
+  @nestjs/jwt \
+  @nestjs/passport \
+  @nestjs/throttler \
+  @nestjs/cache-manager \
+  @nestjs/swagger \
+  passport \
+  passport-jwt \
+  passport-local \
+  @prisma/client \
+  prisma \
+  redis \
+  ioredis \
+  cache-manager-ioredis-yet \
+  bcryptjs \
+  nodemailer \
+  class-validator \
+  class-transformer \
+  http-status-codes \
+  uuid \
+  dayjs
+
+# 4. Dev dependencies
+npm install -D \
+  @types/passport-jwt \
+  @types/passport-local \
+  @types/bcryptjs \
+  @types/nodemailer \
+  @types/uuid \
+  prisma
+
+# 5. Init Prisma
+npx prisma init
 ```
 
-### Step 2: Set Up Environment Variables
-Create a `.env` file in the root directory:
+### Environment Variables (`.env`)
+
+Create a `.env` file in your root folder:
 
 ```env
+# App
 NODE_ENV=development
 PORT=3000
-DATABASE_URL="postgresql://postgres:password@localhost:5432/taskdb?schema=public"
-FRONTEND_URL="http://localhost:3000"
 
-# Redis Config
-REDIS_URL="redis://localhost:6379"
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/todo_db?schema=public"
 
-# Email Sender Config (Nodemailer)
-SMTP_USER="your-email@gmail.com"
-SMTP_PASS="your-app-password"
-SMTP_HOST="smtp.gmail.com"
+# JWT
+JWT_SECRET=your_jwt_secret_here_min_32_chars
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=your_refresh_secret_here_min_32_chars
+JWT_REFRESH_EXPIRES_IN=7d
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Mail (SMTP)
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
-SMTP_FROM="your-email@gmail.com"
+SMTP_USER=your@gmail.com
+SMTP_PASS=your_app_password
+SMTP_FROM="Todo App <your@gmail.com>"
 
-# JWT configuration
-JWT_SECRET="super-secret-access-key-12345"
-EXPIRES_IN="15m"
-REFRESH_TOKEN_SECRET="super-secret-refresh-key-67890"
-REFRESH_TOKEN_EXPIRES_IN="7d"
+# Admin Seed
+ADMIN_EMAIL=admin@todo.com
+ADMIN_PASSWORD=Admin@123456
 
-# Security configuration
-SALT_ROUND=12
-ADMIN_EMAIL="admin@taskmanager.com"
-ADMIN_PASSWORD="SuperSecretAdminPassword123!"
+# OTP
+OTP_EXPIRES_MINUTES=5
 ```
 
 ---
 
-## 4. Prisma v7 Configuration
+## 3. Database Layer & Prisma Schema (`prisma/schema.prisma`)
 
-Create a folder named `prisma` in the root of your project, and create a file inside named `schema.prisma`.
+We use a database-mapped schema for users and tasks:
 
-### `prisma/schema.prisma`
 ```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-enum UserRole {
+enum Role {
   ADMIN
   USER
 }
@@ -186,81 +204,150 @@ enum UserStatus {
   ACTIVE
   SUSPENDED
   DELETED
-  PENDING
 }
 
 enum TaskStatus {
   PENDING
+  IN_PROGRESS
   COMPLETED
 }
 
-model User {
-  id                 String     @id @default(uuid())
-  email              String     @unique
-  password           String
-  role               UserRole
-  status             UserStatus @default(ACTIVE)
-  needPasswordChange Boolean    @default(false)
-  tasks              Task[]
-  admin              Admin?
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
 }
 
-model Admin {
-  id            String   @id @default(uuid())
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  password      String
   name          String
-  profilePhoto  String?
-  contactNumber String?
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String   @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role          Role       @default(USER)
+  status        UserStatus @default(ACTIVE)
+  isVerified    Boolean    @default(false)
+  tasks         Task[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@map("users")
 }
 
 model Task {
-  id          String     @id @default(uuid())
+  id          String       @id @default(uuid())
   title       String
   description String?
-  status      TaskStatus @default(PENDING)
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
   userId      String
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@map("tasks")
 }
 ```
 
-### Prisma Commands
-To apply the schema to your PostgreSQL database and generate the Prisma client, run:
-
+Run schema migrations and generate client:
 ```bash
-# 1. Run migrations to update PostgreSQL
 npx prisma migrate dev --name init
-
-# 2. Re-generate Prisma Client
 npx prisma generate
 ```
 
 ---
 
-## 5. Core Infrastructure Modules
+## 4. Configuration Layer
 
-### Prisma Module & Service
-Create `src/prisma/prisma.service.ts` and `src/prisma/prisma.module.ts`.
+### Centralized Config Modules (`src/config/`)
+
+#### `src/config/app.config.ts`
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export default registerAs('app', () => ({
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: parseInt(process.env.PORT || '3000', 10),
+  adminEmail: process.env.ADMIN_EMAIL,
+  adminPassword: process.env.ADMIN_PASSWORD,
+}));
+```
+
+#### `src/config/jwt.config.ts`
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export default registerAs('jwt', () => ({
+  secret: process.env.JWT_SECRET,
+  expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+  refreshSecret: process.env.JWT_REFRESH_SECRET,
+  refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+}));
+```
+
+#### `src/config/redis.config.ts`
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export default registerAs('redis', () => ({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASSWORD || undefined,
+}));
+```
+
+#### `src/config/mail.config.ts`
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export default registerAs('mail', () => ({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '465', 10),
+  user: process.env.SMTP_USER,
+  pass: process.env.SMTP_PASS,
+  from: process.env.SMTP_FROM,
+  otpExpireMinutes: parseInt(process.env.OTP_EXPIRES_MINUTES || '5', 10),
+}));
+```
+
+---
+
+## 5. Infrastructure Services
+
+### Prisma Service & Module
 
 #### `src/prisma/prisma.service.ts`
 ```typescript
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    super({
+      log: [
+        { emit: 'event', level: 'query' },
+        { emit: 'stdout', level: 'error' },
+        { emit: 'stdout', level: 'warn' },
+      ],
+    });
+  }
+
   async onModuleInit() {
     await this.$connect();
+    this.logger.log('Database connected successfully');
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
+    this.logger.log('Database disconnected');
   }
 }
 ```
@@ -278,46 +365,53 @@ import { PrismaService } from './prisma.service';
 export class PrismaModule {}
 ```
 
----
-
-### Redis Module & Service
-Uses `ioredis` to manage connection to local Redis server, cache OTPs, and perform authentication lookup.
+### Redis Service & Module
 
 #### `src/redis/redis.service.ts`
 ```typescript
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
-export class RedisService implements OnModuleInit, OnModuleDestroy {
-  private redisClient: Redis;
+export class RedisService implements OnModuleDestroy {
+  private readonly logger = new Logger(RedisService.name);
+  private readonly client: Redis;
 
-  constructor(private configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {
+    this.client = new Redis({
+      host: this.configService.get<string>('redis.host'),
+      port: this.configService.get<number>('redis.port'),
+      password: this.configService.get<string>('redis.password') || undefined,
+    });
 
-  onModuleInit() {
-    const redisUrl = this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
-    this.redisClient = new Redis(redisUrl);
+    this.client.on('connect', () => this.logger.log('Redis connected'));
+    this.client.on('error', (err) => this.logger.error('Redis error', err));
   }
 
-  onModuleDestroy() {
-    this.redisClient.disconnect();
-  }
-
-  async set(key: string, value: string, expirySeconds?: number): Promise<void> {
-    if (expirySeconds) {
-      await this.redisClient.set(key, value, 'EX', expirySeconds);
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    if (ttlSeconds) {
+      await this.client.setex(key, ttlSeconds, value);
     } else {
-      await this.redisClient.set(key, value);
+      await this.client.set(key, value);
     }
   }
 
   async get(key: string): Promise<string | null> {
-    return this.redisClient.get(key);
+    return this.client.get(key);
   }
 
   async del(key: string): Promise<void> {
-    await this.redisClient.del(key);
+    await this.client.del(key);
+  }
+
+  async exists(key: string): Promise<boolean> {
+    const result = await this.client.exists(key);
+    return result === 1;
+  }
+
+  onModuleDestroy() {
+    this.client.quit();
   }
 }
 ```
@@ -335,85 +429,66 @@ import { RedisService } from './redis.service';
 export class RedisModule {}
 ```
 
----
-
-### Mail Module & Service (Nodemailer + EJS templates)
-Create `src/mail/mail.service.ts`, `src/mail/mail.module.ts` and EJS template.
-
-#### `src/mail/templates/otp.ejs`
-Create a folder `src/mail/templates` and place `otp.ejs` inside it:
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f7fafc; padding: 20px; color: #2d3748; }
-    .container { max-width: 600px; background-color: #ffffff; padding: 40px; border-radius: 12px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    .header { font-size: 20px; font-weight: bold; color: #1a202c; border-bottom: 1px solid #edf2f7; padding-bottom: 20px; margin-bottom: 20px; }
-    .otp-code { font-size: 32px; font-weight: 800; color: #3182ce; text-align: center; letter-spacing: 4px; padding: 15px; background-color: #ebf8ff; border-radius: 8px; margin: 25px 0; }
-    .footer { font-size: 12px; color: #a0aec0; margin-top: 30px; border-top: 1px solid #edf2f7; padding-top: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">Task Manager Login Verification</div>
-    <p>Hello,</p>
-    <p>You requested a login code to access your Task Manager account. Please use the following One-Time Password (OTP) to complete your login:</p>
-    <div class="otp-code"><%= otp %></div>
-    <p>This OTP is valid for <strong>5 minutes</strong>. If you did not request this login, please ignore this email or contact support.</p>
-    <div class="footer">
-      This is an automated security message. Please do not reply directly to this email.
-    </div>
-  </div>
-</body>
-</html>
-```
+### Mail Service & Module
 
 #### `src/mail/mail.service.ts`
 ```typescript
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import * as ejs from 'ejs';
-import * as path from 'path';
-
-interface SendMailOptions {
-  to: string;
-  subject: string;
-  templateName: string;
-  templateData: Record<string, any>;
-}
+import { Transporter } from 'nodemailer';
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter;
+  private readonly logger = new Logger(MailService.name);
+  private transporter: Transporter;
 
-  constructor(private configService: ConfigService) {
+  constructor(private readonly configService: ConfigService) {
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: Number(this.configService.get<string>('SMTP_PORT')),
+      host: this.configService.get<string>('mail.host'),
+      port: this.configService.get<number>('mail.port'),
       secure: true,
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: this.configService.get<string>('mail.user'),
+        pass: this.configService.get<string>('mail.pass'),
       },
     });
   }
 
-  async sendEmail({ to, subject, templateName, templateData }: SendMailOptions): Promise<void> {
-    try {
-      const templatePath = path.join(process.cwd(), 'src/mail/templates', `${templateName}.ejs`);
-      const html = await ejs.renderFile(templatePath, templateData);
+  async sendOtp(email: string, otp: string, name: string): Promise<void> {
+    const from = this.configService.get<string>('mail.from');
+    const expireMin = this.configService.get<number>('mail.otpExpireMinutes');
 
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; 
+                  border: 1px solid #e2e8f0; border-radius: 8px; padding: 32px;">
+        <h2 style="color: #1a202c;">Hello, ${name}!</h2>
+        <p style="color: #4a5568;">Your One-Time Password (OTP) for login is:</p>
+        <div style="background: #edf2f7; border-radius: 6px; padding: 20px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #2d3748;">
+            ${otp}
+          </span>
+        </div>
+        <p style="color: #718096; font-size: 14px;">
+          This OTP is valid for <strong>${expireMin} minutes</strong>. Do not share it with anyone.
+        </p>
+        <p style="color: #a0aec0; font-size: 12px; margin-top: 24px;">
+          If you didn't request this, please ignore this email.
+        </p>
+      </div>
+    `;
+
+    try {
       await this.transporter.sendMail({
-        from: this.configService.get<string>('SMTP_FROM'),
-        to,
-        subject,
+        from,
+        to: email,
+        subject: 'Your Login OTP — Todo App',
         html,
       });
-    } catch (error: any) {
-      throw new Error(`Email sending failed: ${error.message}`);
+      this.logger.log(`OTP email sent to ${email}`);
+    } catch (error) {
+      this.logger.error(`Failed to send OTP to ${email}`, error);
+      throw new Error('Failed to send OTP email');
     }
   }
 }
@@ -434,251 +509,428 @@ export class MailModule {}
 
 ---
 
-## 6. Helpers & Utilities
+## 6. Common Module Components (Guards, Filters, Interceptors, Decorators, DTOs, & Utils)
 
-### `src/helpers/token.ts`
+### 1. Enums (`src/common/enums/roles.enum.ts`)
 ```typescript
-export const convertExpiresInToMs = (expiresIn: string, defaultMs: number): number => {
-  const unit = expiresIn.slice(-1);
-  const value = parseInt(expiresIn.slice(0, -1));
-  switch (unit) {
-    case "y":
-      return value * 365 * 24 * 60 * 60 * 1000;
-    case "M":
-      return value * 30 * 24 * 60 * 60 * 1000;
-    case "w":
-      return value * 7 * 24 * 60 * 60 * 1000;
-    case "d":
-      return value * 24 * 60 * 60 * 1000;
-    case "h":
-      return value * 60 * 60 * 1000;
-    case "m":
-      return value * 60 * 1000;
-    case "s":
-      return value * 1000;
-    default:
-      return defaultMs;
-  }
-};
-```
-
-### `src/helpers/jwt.helper.ts`
-```typescript
-import * as jwt from 'jsonwebtoken';
-import { JwtPayload, Secret, SignOptions } from 'jsonwebtoken';
-
-const generateToken = (payload: JwtPayload, secret: Secret, expiresIn: string): string => {
-  return jwt.sign(payload, secret, {
-    algorithm: "HS256",
-    expiresIn
-  } as SignOptions);
-};
-
-const verifyToken = (token: string, secret: Secret): JwtPayload => {
-  return jwt.verify(token, secret) as JwtPayload;
-};
-
-export const jwtHelper = {
-  generateToken,
-  verifyToken
-};
-```
-
-### `src/helpers/pagination.helper.ts`
-```typescript
-export type IOptions = {
-  page?: number;
-  limit?: number;
-  sortOrder?: string;
-  sortBy?: string;
-};
-
-export type IOptionsResult = {
-  page: number;
-  limit: number;
-  skip: number;
-  sortBy: string;
-  sortOrder: 'asc' | 'desc';
-};
-
-const calculatePagination = (options: IOptions): IOptionsResult => {
-  const page = Number(options.page) || 1;
-  const limit = Number(options.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const sortBy = options.sortBy || 'createdAt';
-  const sortOrder = (options.sortOrder === 'asc' ? 'asc' : 'desc');
-
-  return {
-    page,
-    limit,
-    skip,
-    sortBy,
-    sortOrder
-  };
-};
-
-export const paginationHelper = {
-  calculatePagination
-};
-```
-
-### `src/helpers/cookies.helper.ts`
-```typescript
-import { Response } from 'express';
-
-interface AuthToken {
-  accessToken?: string;
-  refreshToken?: string;
-  accessTokenMaxAge?: number;
-  refreshTokenMaxAge?: number;
+export enum Role {
+  ADMIN = 'ADMIN',
+  USER = 'USER',
 }
 
-export const setAuthCookie = (res: Response, tokenInfo: AuthToken) => {
-  if (tokenInfo.accessToken) {
-    res.cookie('accessToken', tokenInfo.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: tokenInfo.accessTokenMaxAge || 1000 * 60 * 15, // 15 mins default
-    });
-  }
-  if (tokenInfo.refreshToken) {
-    res.cookie('refreshToken', tokenInfo.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: tokenInfo.refreshTokenMaxAge || 1000 * 60 * 60 * 24 * 7, // 7 days default
-    });
-  }
+export enum Permission {
+  // User permissions
+  READ_OWN_TASKS = 'READ_OWN_TASKS',
+  CREATE_TASK = 'CREATE_TASK',
+  UPDATE_OWN_TASK = 'UPDATE_OWN_TASK',
+  DELETE_OWN_TASK = 'DELETE_OWN_TASK',
+  READ_OWN_PROFILE = 'READ_OWN_PROFILE',
+  UPDATE_OWN_PROFILE = 'UPDATE_OWN_PROFILE',
+
+  // Admin permissions
+  READ_ALL_TASKS = 'READ_ALL_TASKS',
+  READ_ALL_USERS = 'READ_ALL_USERS',
+  UPDATE_ANY_USER = 'UPDATE_ANY_USER',
+  DELETE_ANY_USER = 'DELETE_ANY_USER',
+  SUSPEND_USER = 'SUSPEND_USER',
+}
+
+export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
+  [Role.USER]: [
+    Permission.READ_OWN_TASKS,
+    Permission.CREATE_TASK,
+    Permission.UPDATE_OWN_TASK,
+    Permission.DELETE_OWN_TASK,
+    Permission.READ_OWN_PROFILE,
+    Permission.UPDATE_OWN_PROFILE,
+  ],
+  [Role.ADMIN]: Object.values(Permission),
 };
 ```
 
-### `src/helpers/pick.ts`
+### 2. Interfaces (`src/common/interfaces/`)
+
+#### `src/common/interfaces/jwt-payload.interface.ts`
 ```typescript
-const pick = <T extends Record<string, any>, K extends keyof T>(
-  obj: T,
-  keys: K[]
-): Partial<T> => {
-  const finalObject: Partial<T> = {};
+import { Role } from '../enums/roles.enum';
 
-  for (const key of keys) {
-    if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
-      finalObject[key] = obj[key];
-    }
-  }
-
-  return finalObject;
-};
-
-export default pick;
+export interface JwtPayload {
+  sub: string;
+  email: string;
+  role: Role;
+  iat?: number;
+  exp?: number;
+}
 ```
 
----
-
-## 7. Global Pipes, Guards, Interceptors, Exception Filters
-
-### Global Exception Filter
-Handles formatting standard error messages for Prisma database exceptions, NestJS HTTP Exceptions, and validation errors.
-
-#### `src/common/filters/global-exception.filter.ts`
+#### `src/common/interfaces/paginated-result.interface.ts`
 ```typescript
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+export interface PaginatedResult<T> {
+  data: T[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+```
+
+### 3. Decorators (`src/common/decorators/`)
+
+#### `src/common/decorators/current-user.decorator.ts`
+```typescript
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { JwtPayload } from '../interfaces/jwt-payload.interface';
+
+export const CurrentUser = createParamDecorator(
+  (data: keyof JwtPayload | undefined, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest();
+    const user: JwtPayload = request.user;
+    return data ? user?.[data] : user;
+  },
+);
+```
+
+#### `src/common/decorators/roles.decorator.ts`
+```typescript
+import { SetMetadata } from '@nestjs/common';
+import { Role } from '../enums/roles.enum';
+
+export const ROLES_KEY = 'roles';
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+```
+
+#### `src/common/decorators/permissions.decorator.ts`
+```typescript
+import { SetMetadata } from '@nestjs/common';
+import { Permission } from '../enums/roles.enum';
+
+export const PERMISSIONS_KEY = 'permissions';
+export const RequirePermissions = (...permissions: Permission[]) =>
+  SetMetadata(PERMISSIONS_KEY, permissions);
+```
+
+#### `src/common/decorators/public.decorator.ts`
+```typescript
+import { SetMetadata } from '@nestjs/common';
+
+export const IS_PUBLIC_KEY = 'isPublic';
+export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+```
+
+#### `src/common/decorators/api-paginated-response.decorator.ts`
+```typescript
+import { applyDecorators, Type } from '@nestjs/common';
+import { ApiExtraModels, ApiOkResponse, getSchemaPath } from '@nestjs/swagger';
+import { PaginatedResponseDto } from '../dto/paginated-response.dto';
+
+export const ApiPaginatedResponse = <TModel extends Type<any>>(model: TModel) =>
+  applyDecorators(
+    ApiExtraModels(PaginatedResponseDto, model),
+    ApiOkResponse({
+      schema: {
+        allOf: [
+          { $ref: getSchemaPath(PaginatedResponseDto) },
+          {
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: getSchemaPath(model) },
+              },
+            },
+          },
+        ],
+      },
+    }),
+  );
+```
+
+### 4. DTOs (`src/common/dto/`)
+
+#### `src/common/dto/pagination.dto.ts`
+```typescript
+import { IsOptional, IsPositive, IsString, IsIn, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export class PaginationDto {
+  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 10, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  limit?: number = 10;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'createdAt';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'desc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({ description: 'Search term' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+```
+
+#### `src/common/dto/date-range.dto.ts`
+```typescript
+import { IsOptional, IsDateString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export class DateRangeDto {
+  @ApiPropertyOptional({ example: '2024-01-01' })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ example: '2024-12-31' })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+```
+
+#### `src/common/dto/paginated-response.dto.ts`
+```typescript
+import { ApiProperty } from '@nestjs/swagger';
+
+export class PaginationMeta {
+  @ApiProperty() page: number;
+  @ApiProperty() limit: number;
+  @ApiProperty() total: number;
+  @ApiProperty() totalPages: number;
+  @ApiProperty() hasNextPage: boolean;
+  @ApiProperty() hasPreviousPage: boolean;
+}
+
+export class PaginatedResponseDto<T> {
+  @ApiProperty() success: boolean;
+  @ApiProperty() statusCode: number;
+  @ApiProperty() message: string;
+  data: T[];
+  @ApiProperty({ type: PaginationMeta }) meta: PaginationMeta;
+}
+```
+
+### 5. Exception Filter (`src/common/filters/global-exception.filter.ts`)
+```typescript
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
-import { Response } from 'express';
+
+interface ErrorResponse {
+  success: false;
+  statusCode: number;
+  message: string;
+  error: {
+    code?: string;
+    details?: unknown;
+    path?: string;
+    timestamp: string;
+  };
+}
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  catch(exception: any, host: ArgumentsHost) {
+  private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
 
-    let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Something went wrong!';
-    let errorDetails: any = null;
+    const { statusCode, message, code, details } = this.resolveException(exception);
 
-    if (exception instanceof HttpException) {
-      statusCode = exception.getStatus();
-      const res = exception.getResponse() as any;
-      message = typeof res === 'object' ? res.message || exception.message : res;
-      errorDetails = res;
-    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      errorDetails = { code: exception.code, meta: exception.meta };
-      switch (exception.code) {
-        case 'P2002':
-          message = 'Unique constraint failed (duplicate key value)';
-          statusCode = HttpStatus.CONFLICT;
-          break;
-        case 'P2003':
-          message = 'Foreign key constraint failed';
-          statusCode = HttpStatus.BAD_REQUEST;
-          break;
-        case 'P2025':
-          message = 'Record to update or delete not found';
-          statusCode = HttpStatus.NOT_FOUND;
-          break;
-        default:
-          message = `Database query error: ${exception.message}`;
-          statusCode = HttpStatus.BAD_REQUEST;
-          break;
-      }
-    } else if (exception instanceof Error) {
-      message = exception.message;
-    }
-
-    response.status(statusCode).json({
+    const errorResponse: ErrorResponse = {
       success: false,
+      statusCode,
       message,
       error: {
-        statusCode,
-        message,
-        details: errorDetails,
-        stack: process.env.NODE_ENV === 'development' ? exception.stack : undefined,
+        code,
+        details,
+        path: request.url,
+        timestamp: new Date().toISOString(),
       },
-    });
+    };
+
+    this.logger.error(
+      `[${request.method}] ${request.url} → ${statusCode}: ${message}`,
+      exception instanceof Error ? exception.stack : undefined,
+    );
+
+    response.status(statusCode).json(errorResponse);
+  }
+
+  private resolveException(exception: unknown): {
+    statusCode: number;
+    message: string;
+    code?: string;
+    details?: unknown;
+  } {
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+
+      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const res = exceptionResponse as Record<string, unknown>;
+        return {
+          statusCode: status,
+          message: (Array.isArray(res.message)
+            ? res.message.join(', ')
+            : res.message as string) || exception.message,
+          details: Array.isArray(res.message) ? res.message : undefined,
+        };
+      }
+
+      return { statusCode: status, message: exception.message };
+    }
+
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      return this.handlePrismaError(exception);
+    }
+
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Database validation error',
+        code: 'PRISMA_VALIDATION',
+        details: exception.message,
+      };
+    }
+
+    if (exception instanceof Prisma.PrismaClientInitializationError) {
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Database connection failed',
+        code: 'DB_CONNECTION_ERROR',
+      };
+    }
+
+    if (exception instanceof Error) {
+      if (exception.name === 'JsonWebTokenError') {
+        return { statusCode: HttpStatus.UNAUTHORIZED, message: 'Invalid token', code: 'INVALID_TOKEN' };
+      }
+      if (exception.name === 'TokenExpiredError') {
+        return { statusCode: HttpStatus.UNAUTHORIZED, message: 'Token expired', code: 'TOKEN_EXPIRED' };
+      }
+    }
+
+    return {
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: 'Internal server error',
+      code: 'INTERNAL_ERROR',
+    };
+  }
+
+  private handlePrismaError(err: Prisma.PrismaClientKnownRequestError): {
+    statusCode: number;
+    message: string;
+    code: string;
+    details?: unknown;
+  } {
+    switch (err.code) {
+      case 'P2002':
+        return {
+          statusCode: HttpStatus.CONFLICT,
+          message: `Duplicate value for field: ${(err.meta?.target as string[])?.join(', ')}`,
+          code: 'DUPLICATE_ENTRY',
+          details: err.meta,
+        };
+      case 'P2025':
+        return {
+          statusCode: HttpStatus.NOT_FOUND,
+          message: 'Record not found',
+          code: 'NOT_FOUND',
+        };
+      case 'P2003':
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Related record not found (foreign key constraint)',
+          code: 'FOREIGN_KEY_VIOLATION',
+        };
+      case 'P2014':
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Relation violation',
+          code: 'RELATION_VIOLATION',
+        };
+      default:
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: `Database error: ${err.code}`,
+          code: err.code,
+          details: err.meta,
+        };
+    }
   }
 }
 ```
 
----
-
-### Global Response Interceptor
-Formats all successful responses globally.
-
-#### `src/common/interceptors/response.interceptor.ts`
+### 6. Interceptor (`src/common/interceptors/response.interceptor.ts`)
 ```typescript
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
-export interface ResponseFormat<T> {
+export interface SuccessResponse<T> {
+  success: true;
   statusCode: number;
-  success: boolean;
   message: string;
-  meta?: any;
-  data: T;
+  data: T | null;
+  meta?: unknown;
+  timestamp: string;
 }
 
 @Injectable()
-export class ResponseInterceptor<T> implements NestInterceptor<T, ResponseFormat<T>> {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<ResponseFormat<T>> {
-    const ctx = context.switchToHttp();
-    const response = ctx.getResponse();
-    const statusCode = response.statusCode;
+export class ResponseInterceptor<T> implements NestInterceptor<T, SuccessResponse<T>> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<SuccessResponse<T>> {
+    const httpContext = context.switchToHttp();
+    const response = httpContext.getResponse();
+    const statusCode: number = response.statusCode;
 
     return next.handle().pipe(
       map((result) => {
-        // If results contain paginated attributes structured directly, extract them
-        const message = result?.message || 'Operation successful';
-        const data = result?.data !== undefined ? result.data : result;
-        const meta = result?.meta ?? undefined;
+        const isStructured =
+          result && typeof result === 'object' && ('data' in result || 'message' in result);
 
         return {
-          statusCode,
           success: true,
-          message,
-          meta,
-          data,
+          statusCode,
+          message: isStructured ? result.message || 'Success' : 'Success',
+          data: isStructured ? (result.data ?? null) : result ?? null,
+          meta: isStructured ? result.meta : undefined,
+          timestamp: new Date().toISOString(),
         };
       }),
     );
@@ -686,99 +938,78 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, ResponseFormat
 }
 ```
 
----
+### 7. Custom Guards (`src/common/guards/`)
 
-### Custom Guards & Decorators
-
-#### `src/common/decorators/roles.decorator.ts`
+#### `src/common/guards/jwt-auth.guard.ts`
 ```typescript
-import { SetMetadata } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
-
-export const ROLES_KEY = 'roles';
-export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
-```
-
-#### `src/common/decorators/user.decorator.ts`
-```typescript
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-
-export const CurrentUser = createParamDecorator((data: string | undefined, ctx: ExecutionContext) => {
-  const request = ctx.switchToHttp().getRequest();
-  const user = request.user;
-  return data ? user?.[data] : user;
-});
-```
-
-#### `src/common/guards/auth.guard.ts`
-```typescript
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { jwtHelper } from '../../helpers/jwt.helper';
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { AuthGuard } from '@nestjs/passport';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(private configService: ConfigService) {}
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(private reflector: Reflector) {
+    super();
+  }
 
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    
-    // Check cookies first, then authorization headers
-    let token = request.cookies?.['accessToken'];
-    
-    if (!token && request.headers.authorization) {
-      const parts = request.headers.authorization.split(' ');
-      if (parts[0] === 'Bearer') {
-        token = parts[1];
-      }
-    }
+  canActivate(context: ExecutionContext) {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
-    if (!token) {
-      throw new UnauthorizedException('Authentication token missing');
-    }
+    if (isPublic) return true;
 
-    try {
-      const secret = this.configService.get<string>('JWT_SECRET');
-      const decoded = jwtHelper.verifyToken(token, secret);
-      request.user = decoded;
-      return true;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid or expired authentication token');
+    return super.canActivate(context);
+  }
+
+  handleRequest(err: any, user: any, info: any) {
+    if (err || !user) {
+      const message =
+        info?.name === 'TokenExpiredError'
+          ? 'Access token has expired'
+          : info?.message || 'Unauthorized';
+      throw err || new UnauthorizedException(message);
     }
+    return user;
   }
 }
 ```
 
 #### `src/common/guards/roles.guard.ts`
 ```typescript
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { Role } from '../enums/roles.enum';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
+    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
-    }
+    if (!requiredRoles || requiredRoles.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest();
-    
-    if (!user || !user.role) {
-      throw new ForbiddenException('Access denied: Role authentication information not found');
-    }
 
-    const hasRole = requiredRoles.includes(user.role);
+    if (!user) throw new ForbiddenException('No user found in request');
+
+    const hasRole = requiredRoles.some((role) => user.role === role);
+
     if (!hasRole) {
-      throw new ForbiddenException('Access denied: You do not have permission to access this resource');
+      throw new ForbiddenException(
+        `Access denied. Required roles: ${requiredRoles.join(', ')}`,
+      );
     }
 
     return true;
@@ -786,242 +1017,411 @@ export class RolesGuard implements CanActivate {
 }
 ```
 
----
-
-### Custom Pipe & Rate Limiting Middleware
-
-#### `src/common/pipes/trim.pipe.ts`
+#### `src/common/guards/permissions.guard.ts`
 ```typescript
-import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { Permission, ROLE_PERMISSIONS, Role } from '../enums/roles.enum';
 
 @Injectable()
-export class TrimPipe implements PipeTransform {
-  transform(value: any, metadata: ArgumentMetadata) {
-    if (metadata.type !== 'body') {
-      return value;
+export class PermissionsGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredPermissions = this.reflector.getAllAndOverride<Permission[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!requiredPermissions || requiredPermissions.length === 0) return true;
+
+    const { user } = context.switchToHttp().getRequest();
+
+    if (!user) throw new ForbiddenException('No user found in request');
+
+    const userPermissions = ROLE_PERMISSIONS[user.role as Role] || [];
+    const hasAllPermissions = requiredPermissions.every((perm) =>
+      userPermissions.includes(perm),
+    );
+
+    if (!hasAllPermissions) {
+      throw new ForbiddenException('You do not have permission to perform this action');
     }
-    
-    if (typeof value === 'object' && value !== null) {
-      Object.keys(value).forEach((key) => {
-        if (typeof value[key] === 'string') {
-          value[key] = value[key].trim();
-        }
-      });
-    }
-    return value;
+
+    return true;
   }
 }
 ```
 
-#### `src/common/middlewares/rate-limit.middleware.ts`
-Uses `express-rate-limit` windowed rate limiting to shield routes.
-
+#### `src/common/guards/throttler.guard.ts` (Sliding Window Guard)
 ```typescript
-import rateLimit from 'express-rate-limit';
+import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
+import { Injectable, ExecutionContext } from '@nestjs/common';
 
-export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.',
-    error: {
-      statusCode: 429,
-      message: 'Too many requests from this IP, please try again later.'
-    }
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+@Injectable()
+export class CustomThrottlerGuard extends ThrottlerGuard {
+  protected async throwThrottlingException(
+    context: ExecutionContext,
+    throttlerLimitDetail: any,
+  ): Promise<void> {
+    throw new ThrottlerException(
+      `Rate limit exceeded. Try again in ${Math.ceil(
+        throttlerLimitDetail.timeToExpire / 1000,
+      )} seconds.`,
+    );
+  }
 
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10, // limit each IP to 10 login/verify attempts per 15 minutes
-  message: {
-    success: false,
-    message: 'Too many login attempts, please try again later.',
-    error: {
-      statusCode: 429,
-      message: 'Too many login attempts, please try again later.'
+  protected async getTracker(req: Record<string, any>): Promise<string> {
+    const userId = req.user?.sub;
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return userId ? `${userId}:${ip}` : ip;
+  }
+}
+```
+
+### 8. Pipes (`src/common/pipes/validation.pipe.ts`)
+```typescript
+import {
+  PipeTransform,
+  Injectable,
+  ArgumentMetadata,
+  BadRequestException,
+} from '@nestjs/common';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+
+@Injectable()
+export class CustomValidationPipe implements PipeTransform<any> {
+  async transform(value: any, { metatype }: ArgumentMetadata) {
+    if (!metatype || !this.toValidate(metatype)) {
+      return value;
     }
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-});
+
+    const object = plainToInstance(metatype, value);
+    const errors = await validate(object, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      skipMissingProperties: false,
+    });
+
+    if (errors.length > 0) {
+      const messages = errors.flatMap((err) =>
+        Object.values(err.constraints || {}),
+      );
+      throw new BadRequestException({
+        message: messages,
+        error: 'Validation Failed',
+      });
+    }
+
+    return object;
+  }
+
+  private toValidate(metatype: Function): boolean {
+    const types: Function[] = [String, Boolean, Number, Array, Object];
+    return !types.includes(metatype);
+  }
+}
+```
+
+### 9. Utility Helpers (`src/common/utils/`)
+
+#### `src/common/utils/pagination.util.ts`
+```typescript
+import { PaginationDto } from '../dto/pagination.dto';
+import { PaginatedResult } from '../interfaces/paginated-result.interface';
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+  skip: number;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
+export function buildPaginationParams(dto: PaginationDto): PaginationParams {
+  const page = Math.max(1, dto.page || 1);
+  const limit = Math.min(100, Math.max(1, dto.limit || 10));
+  const skip = (page - 1) * limit;
+  const sortBy = dto.sortBy || 'createdAt';
+  const sortOrder = (dto.sortOrder || 'desc') as 'asc' | 'desc';
+
+  return { page, limit, skip, sortBy, sortOrder };
+}
+
+export function buildPaginatedResult<T>(
+  data: T[],
+  total: number,
+  params: PaginationParams,
+): PaginatedResult<T> {
+  const totalPages = Math.ceil(total / params.limit);
+
+  return {
+    data,
+    meta: {
+      page: params.page,
+      limit: params.limit,
+      total,
+      totalPages,
+      hasNextPage: params.page < totalPages,
+      hasPreviousPage: params.page > 1,
+    },
+  };
+}
+```
+
+#### `src/common/utils/date-range.util.ts`
+```typescript
+import { DateRangeDto } from '../dto/date-range.dto';
+
+export function buildDateRangeFilter(
+  field: string,
+  dateRange?: DateRangeDto,
+): Record<string, unknown> {
+  if (!dateRange?.startDate && !dateRange?.endDate) return {};
+
+  const filter: Record<string, Date> = {};
+
+  if (dateRange.startDate) {
+    filter.gte = new Date(dateRange.startDate);
+  }
+  if (dateRange.endDate) {
+    const end = new Date(dateRange.endDate);
+    end.setHours(23, 59, 59, 999);
+    filter.lte = end;
+  }
+
+  return { [field]: filter };
+}
+```
+
+#### `src/common/utils/hash.util.ts`
+```typescript
+import * as bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 12;
+
+export async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, SALT_ROUNDS);
+}
+
+export async function comparePassword(plain: string, hashed: string): Promise<boolean> {
+  return bcrypt.compare(plain, hashed);
+}
+
+export function generateOtp(length = 6): string {
+  const digits = '0123456789';
+  let otp = '';
+  for (let i = 0; i < length; i++) {
+    otp += digits[Math.floor(Math.random() * 10)];
+  }
+  return otp;
+}
 ```
 
 ---
 
-## 8. AuthModule (Registration, OTP, Redis login, Seed Super Admin)
+## 7. Authentication Module
 
-Create controllers, services, modules, and seeding logic inside `src/modules/auth`.
-
-### DTOs
+### 1. DTOs (`src/modules/auth/dto/`)
 
 #### `src/modules/auth/dto/register.dto.ts`
 ```typescript
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  MaxLength,
+  Matches,
+  IsNotEmpty,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class RegisterDto {
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
+  @ApiProperty({ example: 'John Doe' })
   @IsString()
   @IsNotEmpty()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(2)
+  @MaxLength(60)
+  name: string;
+
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail({}, { message: 'Invalid email address' })
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email: string;
+
+  @ApiProperty({
+    example: 'StrongPass@123',
+    description:
+      'Min 8 chars, must have uppercase, lowercase, number, and special character',
+  })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/, {
+    message:
+      'Password must contain uppercase, lowercase, number, and special character',
+  })
   password: string;
 }
 ```
 
 #### `src/modules/auth/dto/login.dto.ts`
 ```typescript
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsString, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class LoginDto {
+  @ApiProperty({ example: 'john@example.com' })
   @IsEmail()
-  @IsNotEmpty()
+  @Transform(({ value }) => value?.toLowerCase().trim())
   email: string;
 
+  @ApiProperty({ example: 'StrongPass@123' })
   @IsString()
-  @IsNotEmpty()
+  @MinLength(6)
   password: string;
 }
 ```
 
 #### `src/modules/auth/dto/verify-otp.dto.ts`
 ```typescript
-import { IsEmail, IsNotEmpty, IsString, Length } from 'class-validator';
+import { IsEmail, IsString, Length } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class VerifyOtpDto {
+  @ApiProperty({ example: 'john@example.com' })
   @IsEmail()
-  @IsNotEmpty()
+  @Transform(({ value }) => value?.toLowerCase().trim())
   email: string;
 
+  @ApiProperty({ example: '123456' })
   @IsString()
-  @IsNotEmpty()
   @Length(6, 6, { message: 'OTP must be exactly 6 digits' })
   otp: string;
 }
 ```
 
----
-
-### Super Admin Seeder
-Seers a Super Admin dynamically during project bootstrap.
-
-#### `src/modules/auth/seedAdmin.ts`
+#### `src/modules/auth/dto/refresh-token.dto.ts`
 ```typescript
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class RefreshTokenDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  refreshToken: string;
+}
+```
+
+### 2. Passport JWT Strategy (`src/modules/auth/strategies/jwt.strategy.ts`)
+```typescript
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../prisma/prisma.service';
-import { UserRole, UserStatus } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { JwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
 @Injectable()
-export class SeedSuperAdmin implements OnApplicationBootstrap {
-  private readonly logger = new Logger(SeedSuperAdmin.name);
-
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
-    private prisma: PrismaService,
-    private configService: ConfigService
-  ) {}
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: configService.get<string>('jwt.secret'),
+    });
+  }
 
-  async onApplicationBootstrap() {
-    try {
-      const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
-      const adminPassword = this.configService.get<string>('ADMIN_PASSWORD');
-      const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 10;
+  async validate(payload: JwtPayload): Promise<JwtPayload> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, role: true, status: true },
+    });
 
-      const adminExists = await this.prisma.user.findFirst({
-        where: { role: UserRole.ADMIN },
-      });
-
-      if (adminExists) {
-        this.logger.log('Super Admin already exists. Seeding skipped.');
-        return;
-      }
-
-      const hashedPassword = await bcrypt.hash(adminPassword, saltRound);
-
-      await this.prisma.user.create({
-        data: {
-          email: adminEmail,
-          password: hashedPassword,
-          role: UserRole.ADMIN,
-          status: UserStatus.ACTIVE,
-          admin: {
-            create: {
-              name: 'Super Admin',
-              profilePhoto: 'https://res.cloudinary.com/dosvjludu/image/upload/v1759681814/c1309i14mi8-1759681814423-sazid-webp.webp.webp',
-              contactNumber: '+8801234567890',
-            },
-          },
-        },
-      });
-
-      this.logger.log('Super Admin account created successfully.');
-    } catch (err: any) {
-      this.logger.error('Failed to seed Super Admin:', err.message);
+    if (!user) throw new UnauthorizedException('User no longer exists');
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException(`Account is ${user.status.toLowerCase()}`);
     }
+
+    return { sub: user.id, email: user.email, role: user.role as any };
   }
 }
 ```
 
----
-
-### Auth Service
-Manages authentication token generation, registration, password comparisons, Redis OTP validation, and Nodemailer dispatch.
-
-#### `src/modules/auth/auth.service.ts`
+### 3. Auth Service (`src/modules/auth/auth.service.ts`)
 ```typescript
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { MailService } from '../../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { UserRole, UserStatus } from '@prisma/client';
-import { jwtHelper } from '../../helpers/jwt.helper';
-import { convertExpiresInToMs } from '../../helpers/token';
-import * as bcrypt from 'bcryptjs';
+import { comparePassword, generateOtp, hashPassword } from '../../common/utils/hash.util';
+import { Role } from '../../common/enums/roles.enum';
+import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
+  private readonly OTP_PREFIX = 'otp:';
+  private readonly OTP_ATTEMPTS_PREFIX = 'otp_attempts:';
+  private readonly REFRESH_PREFIX = 'refresh:';
+
   constructor(
-    private prisma: PrismaService,
-    private redis: RedisService,
-    private mail: MailService,
-    private configService: ConfigService
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly mail: MailService,
+    private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
-    const userExists = await this.prisma.user.findUnique({
+    const exists = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
-    if (userExists) {
-      throw new BadRequestException('User with this email already exists');
+    if (exists) {
+      throw new ConflictException('An account with this email already exists');
     }
 
-    const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 10;
-    const hashedPassword = await bcrypt.hash(dto.password, saltRound);
+    const hashedPassword = await hashPassword(dto.password);
 
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
+        name: dto.name,
         password: hashedPassword,
-        role: UserRole.USER,
-        status: UserStatus.ACTIVE,
+        role: Role.USER,
+        isVerified: false,
       },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
 
+    this.logger.log(`New user registered: ${user.email}`);
+
     return {
-      message: 'Registration successful! Please login.',
-      data: { id: user.id, email: user.email },
+      message: 'Registration successful. Please login with your credentials.',
+      data: user,
     };
   }
 
@@ -1031,896 +1431,1141 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException('User does not exist');
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    if (user.status === UserStatus.DELETED || user.status === UserStatus.SUSPENDED) {
-      throw new BadRequestException(`Your account is currently ${user.status}`);
+    if (user.status === 'DELETED') {
+      throw new UnauthorizedException('This account has been deleted');
     }
 
-    const isPassValid = await bcrypt.compare(dto.password, user.password);
-    if (!isPassValid) {
-      throw new UnauthorizedException('Invalid login credentials');
+    if (user.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Your account is suspended. Contact support.');
     }
 
-    // Generate random 6 digit OTP code
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Store in Redis with 5 minutes TTL
-    const redisKey = `otp:${dto.email}`;
-    await this.redis.set(redisKey, otp, 300);
+    const isPasswordValid = await comparePassword(dto.password, user.password);
 
-    // Send OTP using MailService with EJS templates
-    await this.mail.sendEmail({
-      to: dto.email,
-      subject: 'Your OTP Login Code',
-      templateName: 'otp',
-      templateData: { otp, email: dto.email },
-    });
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const otp = generateOtp(6);
+    const otpKey = `${this.OTP_PREFIX}${user.email}`;
+    const attemptsKey = `${this.OTP_ATTEMPTS_PREFIX}${user.email}`;
+    const expireMinutes = this.config.get<number>('mail.otpExpireMinutes', 5);
+
+    await this.redis.set(otpKey, otp, expireMinutes * 60);
+    await this.redis.set(attemptsKey, '0', expireMinutes * 60);
+
+    await this.mail.sendOtp(user.email, otp, user.name);
 
     return {
-      message: 'A 6-digit OTP code has been sent to your email. Please verify OTP to sign in.',
-      data: { email: dto.email },
+      message: `OTP sent to ${user.email}. Valid for ${expireMinutes} minutes.`,
+      data: { email: user.email },
     };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
-    const redisKey = `otp:${dto.email}`;
-    const cachedOtp = await this.redis.get(redisKey);
+    const otpKey = `${this.OTP_PREFIX}${dto.email}`;
+    const attemptsKey = `${this.OTP_ATTEMPTS_PREFIX}${dto.email}`;
 
-    if (!cachedOtp || cachedOtp !== dto.otp) {
-      throw new BadRequestException('Invalid or expired OTP code');
+    const storedOtp = await this.redis.get(otpKey);
+
+    if (!storedOtp) {
+      throw new BadRequestException('OTP has expired or was never sent. Please login again.');
     }
 
-    // Remove OTP from Redis
-    await this.redis.del(redisKey);
+    const attemptsStr = await this.redis.get(attemptsKey);
+    const attempts = parseInt(attemptsStr || '0', 10);
+
+    if (attempts >= 5) {
+      await this.redis.del(otpKey);
+      await this.redis.del(attemptsKey);
+      throw new BadRequestException('Too many failed OTP attempts. Please login again.');
+    }
+
+    if (storedOtp !== dto.otp) {
+      await this.redis.set(attemptsKey, String(attempts + 1), 300);
+      throw new BadRequestException(
+        `Invalid OTP. ${4 - attempts} attempt(s) remaining.`,
+      );
+    }
+
+    await this.redis.del(otpKey);
+    await this.redis.del(attemptsKey);
 
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
+      select: { id: true, email: true, name: true, role: true },
     });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
-    // Generate Tokens
-    const { accessToken, refreshToken } = this.generateTokens(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { isVerified: true },
+    });
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role as Role);
 
     return {
-      message: 'OTP validation successful. Logged in successfully.',
+      message: 'Login successful',
       data: {
-        user: { id: user.id, email: user.email, role: user.role },
-        accessToken,
-        refreshToken,
+        user: { id: user.id, email: user.email, name: user.name, role: user.role },
+        ...tokens,
       },
     };
   }
 
-  async refreshTokens(token: string) {
+  async refreshTokens(refreshToken: string) {
+    let payload: JwtPayload;
+
     try {
-      const refreshSecret = this.configService.get<string>('REFRESH_TOKEN_SECRET');
-      const payload = jwtHelper.verifyToken(token, refreshSecret);
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.userId },
+      payload = this.jwtService.verify(refreshToken, {
+        secret: this.config.get<string>('jwt.refreshSecret'),
       });
-
-      if (!user || user.status === UserStatus.SUSPENDED || user.status === UserStatus.DELETED) {
-        throw new UnauthorizedException('User account has been suspended or deleted');
-      }
-
-      const { accessToken, refreshToken } = this.generateTokens(user);
-
-      return {
-        message: 'Tokens refreshed successfully.',
-        data: { accessToken, refreshToken },
-      };
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+
+    const storedToken = await this.redis.get(`${this.REFRESH_PREFIX}${payload.sub}`);
+
+    if (storedToken && storedToken !== refreshToken) {
+      await this.redis.del(`${this.REFRESH_PREFIX}${payload.sub}`);
+      throw new UnauthorizedException('Refresh token reuse detected. Please login again.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, role: true, status: true },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role as Role);
+
+    return {
+      message: 'Tokens refreshed successfully',
+      data: tokens,
+    };
   }
 
-  private generateTokens(user: any) {
-    const payload = { userId: user.id, email: user.email, role: user.role };
-    
-    const accessToken = jwtHelper.generateToken(
-      payload,
-      this.configService.get<string>('JWT_SECRET'),
-      this.configService.get<string>('EXPIRES_IN')
-    );
+  async logout(userId: string) {
+    await this.redis.del(`${this.REFRESH_PREFIX}${userId}`);
+    return { message: 'Logged out successfully', data: null };
+  }
 
-    const refreshToken = jwtHelper.generateToken(
-      payload,
-      this.configService.get<string>('REFRESH_TOKEN_SECRET'),
-      this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN')
-    );
+  private async generateTokens(userId: string, email: string, role: Role) {
+    const payload: JwtPayload = { sub: userId, email, role };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.config.get<string>('jwt.secret'),
+        expiresIn: this.config.get<string>('jwt.expiresIn'),
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.config.get<string>('jwt.refreshSecret'),
+        expiresIn: this.config.get<string>('jwt.refreshExpiresIn'),
+      }),
+    ]);
+
+    const expireSeconds = 7 * 24 * 60 * 60; // 7 days
+    await this.redis.set(`${this.REFRESH_PREFIX}${userId}`, refreshToken, expireSeconds);
 
     return { accessToken, refreshToken };
   }
 }
 ```
 
----
-
-### Auth Controller & Auth Module
-
-#### `src/modules/auth/auth.controller.ts`
+### 4. Auth Controller (`src/modules/auth/auth.controller.ts`)
 ```typescript
-import { Body, Controller, Post, Req, Res, UnauthorizedException, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { TrimPipe } from '../../common/pipes/trim.pipe';
-import { Response, Request } from 'express';
-import { setAuthCookie } from '../../helpers/cookies.helper';
-import { convertExpiresInToMs } from '../../helpers/token';
-import { ConfigService } from '@nestjs/config';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { Public } from '../../common/decorators/public.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private authService: AuthService,
-    private configService: ConfigService
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('register')
-  @UsePipes(new TrimPipe())
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
+  @Public()
   @Post('login')
-  @UsePipes(new TrimPipe())
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: 'Login with credentials (sends OTP)' })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  @Public()
   @Post('verify-otp')
-  @UsePipes(new TrimPipe())
-  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.verifyOtp(dto);
-
-    const accessExpiry = this.configService.get<string>('EXPIRES_IN');
-    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN');
-
-    setAuthCookie(res, {
-      accessToken: result.data.accessToken,
-      refreshToken: result.data.refreshToken,
-      accessTokenMaxAge: convertExpiresInToMs(accessExpiry, 1000 * 60 * 15),
-      refreshTokenMaxAge: convertExpiresInToMs(refreshExpiry, 1000 * 60 * 60 * 24 * 7),
-    });
-
-    return {
-      message: result.message,
-      data: result.data.user,
-    };
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: 'Verify OTP and receive JWT tokens' })
+  async verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto);
   }
 
-  @Post('refresh-token')
-  async refreshTokens(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const rToken = req.cookies?.['refreshToken'];
-    if (!rToken) {
-      throw new UnauthorizedException('Refresh token is missing');
-    }
-
-    const result = await this.authService.refreshTokens(rToken);
-
-    const accessExpiry = this.configService.get<string>('EXPIRES_IN');
-    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN');
-
-    setAuthCookie(res, {
-      accessToken: result.data.accessToken,
-      refreshToken: result.data.refreshToken,
-      accessTokenMaxAge: convertExpiresInToMs(accessExpiry, 1000 * 60 * 15),
-      refreshTokenMaxAge: convertExpiresInToMs(refreshExpiry, 1000 * 60 * 60 * 24 * 7),
-    });
-
-    return {
-      message: result.message,
-    };
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  async refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshTokens(dto.refreshToken);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
-    return {
-      message: 'Logged out successfully.',
-    };
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout and invalidate refresh token' })
+  async logout(@CurrentUser() user: JwtPayload) {
+    return this.authService.logout(user.sub);
   }
 }
 ```
 
-#### `src/modules/auth/auth.module.ts`
+### 5. Auth Module (`src/modules/auth/auth.module.ts`)
 ```typescript
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { SeedSuperAdmin } from './seedAdmin';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.register({}),
+  ],
   controllers: [AuthController],
-  providers: [AuthService, SeedSuperAdmin],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}
 ```
 
 ---
 
-## 9. UserModule (Admin Operations)
+## 8. Users Module
 
-Allows Super Admins to list all registered accounts, toggle status values, and delete accounts.
+### 1. DTOs (`src/modules/users/dto/`)
 
-### DTO
-#### `src/modules/user/dto/update-user-status.dto.ts`
+#### `src/modules/users/dto/query-user.dto.ts`
 ```typescript
-import { IsEnum, IsNotEmpty } from 'class-validator';
+import { IsOptional, IsEnum, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '@prisma/client';
+import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { DateRangeDto } from '../../../common/dto/date-range.dto';
+import { IntersectionType } from '@nestjs/mapped-types';
 
-export class UpdateUserStatusDto {
-  @IsEnum(UserStatus, { message: 'Must be ACTIVE, SUSPENDED, DELETED, or PENDING' })
-  @IsNotEmpty()
-  status: UserStatus;
+export class QueryUserDto extends IntersectionType(PaginationDto, DateRangeDto) {
+  @ApiPropertyOptional({ enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
 ```
 
-### Controller, Service & Module
-
-#### `src/modules/user/user.service.ts`
+#### `src/modules/users/dto/update-user.dto.ts`
 ```typescript
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  MinLength,
+  MaxLength,
+} from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '@prisma/client';
 
-@Injectable()
-export class UserService {
-  constructor(private prisma: PrismaService) {}
+export class UpdateUserDto {
+  @ApiPropertyOptional({ example: 'Jane Doe' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  name?: string;
+}
 
-  async getAllUsers() {
-    return this.prisma.user.findMany({
+export class AdminUpdateUserDto extends UpdateUserDto {
+  @ApiPropertyOptional({ enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+}
+```
+
+### 2. Users Service (`src/modules/users/users.service.ts`)
+```typescript
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { QueryUserDto } from './dto/query-user.dto';
+import { AdminUpdateUserDto, UpdateUserDto } from './dto/update-user.dto';
+import { buildPaginationParams, buildPaginatedResult } from '../../common/utils/pagination.util';
+import { buildDateRangeFilter } from '../../common/utils/date-range.util';
+import { Prisma } from '@prisma/client';
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findAll(query: QueryUserDto) {
+    const params = buildPaginationParams(query);
+    const dateFilter = buildDateRangeFilter('createdAt', query);
+
+    const where: Prisma.UserWhereInput = {
+      role: 'USER',
+      ...(query.status && { status: query.status }),
+      ...(query.search && {
+        OR: [
+          { name: { contains: query.search, mode: 'insensitive' } },
+          { email: { contains: query.search, mode: 'insensitive' } },
+        ],
+      }),
+      ...dateFilter,
+    };
+
+    const allowedSortFields = ['name', 'email', 'createdAt', 'status'];
+    const sortBy = allowedSortFields.includes(params.sortBy) ? params.sortBy : 'createdAt';
+
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+          isVerified: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: { select: { tasks: true } },
+        },
+        skip: params.skip,
+        take: params.limit,
+        orderBy: { [sortBy]: params.sortOrder },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return buildPaginatedResult(users, total, params);
+  }
+
+  async findOne(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
       select: {
         id: true,
+        name: true,
         email: true,
         role: true,
         status: true,
+        isVerified: true,
         createdAt: true,
-        admin: {
-          select: {
-            name: true,
-            contactNumber: true,
-          },
-        },
+        updatedAt: true,
+        _count: { select: { tasks: true } },
       },
     });
+
+    if (!user) throw new NotFoundException(`User with ID "${id}" not found`);
+
+    return user;
   }
 
-  async updateUserStatus(userId: string, status: UserStatus) {
-    const user = await this.prisma.user.findUnique({
+  async updateProfile(userId: string, dto: UpdateUserDto) {
+    await this.findOne(userId);
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
+      data: { name: dto.name },
+      select: {
+        id: true, name: true, email: true, role: true,
+        status: true, updatedAt: true,
+      },
     });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    if (user.role === 'ADMIN') {
-      throw new BadRequestException('Cannot change the status of an Admin user');
-    }
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { status },
-      select: { id: true, email: true, status: true },
-    });
+    return { message: 'Profile updated successfully', data: updated };
   }
 
-  async deleteUser(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  async adminUpdateUser(id: string, dto: AdminUpdateUserDto) {
+    await this.findOne(id);
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.status && { status: dto.status }),
+      },
+      select: {
+        id: true, name: true, email: true, role: true,
+        status: true, updatedAt: true,
+      },
     });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    return { message: 'User updated successfully', data: updated };
+  }
+
+  async deleteUser(id: string) {
+    const user = await this.findOne(id);
 
     if (user.role === 'ADMIN') {
-      throw new BadRequestException('Cannot delete an Admin account');
+      throw new ForbiddenException('Cannot delete admin accounts');
     }
 
-    await this.prisma.user.delete({
-      where: { id: userId },
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: 'DELETED' },
     });
 
-    return { id: userId };
+    return { message: 'User deleted successfully', data: null };
+  }
+
+  async suspendUser(id: string) {
+    await this.findOne(id);
+    await this.prisma.user.update({ where: { id }, data: { status: 'SUSPENDED' } });
+    return { message: 'User suspended', data: null };
+  }
+
+  async activateUser(id: string) {
+    await this.findOne(id);
+    await this.prisma.user.update({ where: { id }, data: { status: 'ACTIVE' } });
+    return { message: 'User activated', data: null };
   }
 }
 ```
 
-#### `src/modules/user/user.controller.ts`
+### 3. Users Controller (`src/modules/users/users.controller.ts`)
 ```typescript
-import { Body, Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
-import { UserService } from './user.service';
-import { UpdateUserStatusDto } from './dto/update-user-status.dto';
-import { AuthGuard } from '../../common/guards/auth.guard';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { UsersService } from './users.service';
+import { QueryUserDto } from './dto/query-user.dto';
+import { AdminUpdateUserDto, UpdateUserDto } from './dto/update-user.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Role, Permission } from '../../common/enums/roles.enum';
+import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
+@ApiTags('Users')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('users')
-@UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN) // Admin only routes
-export class UserController {
-  constructor(private userService: UserService) {}
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Get('me')
+  @RequirePermissions(Permission.READ_OWN_PROFILE)
+  @ApiOperation({ summary: 'Get own profile' })
+  async getMyProfile(@CurrentUser() user: JwtPayload) {
+    return this.usersService.findOne(user.sub);
+  }
+
+  @Patch('me')
+  @RequirePermissions(Permission.UPDATE_OWN_PROFILE)
+  @ApiOperation({ summary: 'Update own profile' })
+  async updateMyProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.usersService.updateProfile(user.sub, dto);
+  }
 
   @Get()
-  async getAllUsers() {
-    const users = await this.userService.getAllUsers();
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.READ_ALL_USERS)
+  @ApiOperation({ summary: '[Admin] List all users with pagination, search, filter' })
+  async findAll(@Query() query: QueryUserDto) {
+    const result = await this.usersService.findAll(query);
     return {
       message: 'Users retrieved successfully',
-      data: users,
+      data: result.data,
+      meta: result.meta,
     };
   }
 
-  @Patch(':id/status')
-  async updateUserStatus(@Param('id') userId: string, @Body() dto: UpdateUserStatusDto) {
-    const updated = await this.userService.updateUserStatus(userId, dto.status);
-    return {
-      message: `User status updated to ${dto.status} successfully`,
-      data: updated,
-    };
+  @Get(':id')
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.READ_ALL_USERS)
+  @ApiOperation({ summary: '[Admin] Get user by ID' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.UPDATE_ANY_USER)
+  @ApiOperation({ summary: '[Admin] Update user name or status' })
+  async adminUpdate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminUpdateUserDto,
+  ) {
+    return this.usersService.adminUpdateUser(id, dto);
+  }
+
+  @Patch(':id/suspend')
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.SUSPEND_USER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Admin] Suspend user' })
+  async suspend(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.suspendUser(id);
+  }
+
+  @Patch(':id/activate')
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.UPDATE_ANY_USER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Admin] Activate user' })
+  async activate(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.activateUser(id);
   }
 
   @Delete(':id')
-  async deleteUser(@Param('id') userId: string) {
-    const result = await this.userService.deleteUser(userId);
-    return {
-      message: 'User deleted successfully',
-      data: result,
-    };
+  @Roles(Role.ADMIN)
+  @RequirePermissions(Permission.DELETE_ANY_USER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Admin] Soft-delete user' })
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.deleteUser(id);
   }
 }
 ```
 
-#### `src/modules/user/user.module.ts`
+#### `src/modules/users/users.module.ts`
 ```typescript
 import { Module } from '@nestjs/common';
-import { UserController } from './user.controller';
-import { UserService } from './user.service';
+import { UsersController } from './users.controller';
+import { UsersService } from './users.service';
 
 @Module({
-  controllers: [UserController],
-  providers: [UserService],
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],
 })
-export class UserModule {}
+export class UsersModule {}
 ```
 
 ---
 
-## 10. TaskModule (User Task CRUD with Advanced Filters)
+## 9. Tasks Module
 
-Allows authenticated users to manage their own tasks with pagination, searching, sorting, status filters, and date range filters.
+### 1. DTOs (`src/modules/tasks/dto/`)
 
-### DTOs
-
-#### `src/modules/task/dto/create-task.dto.ts`
+#### `src/modules/tasks/dto/create-task.dto.ts`
 ```typescript
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  MinLength,
+  MaxLength,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskPriority } from '@prisma/client';
 
 export class CreateTaskDto {
+  @ApiProperty({ example: 'Complete NestJS project' })
   @IsString()
-  @IsNotEmpty({ message: 'Task title is required' })
+  @MinLength(3)
+  @MaxLength(200)
   title: string;
 
-  @IsString()
+  @ApiPropertyOptional({ example: 'Build full-stack todo app' })
   @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   description?: string;
+
+  @ApiPropertyOptional({ enum: TaskPriority, default: 'MEDIUM' })
+  @IsOptional()
+  @IsEnum(TaskPriority)
+  priority?: TaskPriority;
+
+  @ApiPropertyOptional({ example: '2024-12-31' })
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
 }
 ```
 
-#### `src/modules/task/dto/update-task.dto.ts`
+#### `src/modules/tasks/dto/update-task.dto.ts`
 ```typescript
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { IsEnum, IsOptional } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
+import { CreateTaskDto } from './create-task.dto';
 
-export class UpdateTaskDto {
-  @IsString()
+export class UpdateTaskDto extends PartialType(CreateTaskDto) {
+  @ApiPropertyOptional({ enum: TaskStatus })
   @IsOptional()
-  title?: string;
-
-  @IsString()
-  @IsOptional()
-  description?: string;
-
-  @IsEnum(TaskStatus, { message: 'Must be PENDING or COMPLETED' })
-  @IsOptional()
+  @IsEnum(TaskStatus)
   status?: TaskStatus;
 }
 ```
 
-#### `src/modules/task/dto/query-task.dto.ts`
+#### `src/modules/tasks/dto/query-task.dto.ts`
 ```typescript
-import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { TaskStatus } from '@prisma/client';
+import { IsOptional, IsEnum, IsString, IsUUID } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { TaskStatus, TaskPriority } from '@prisma/client';
+import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { DateRangeDto } from '../../../common/dto/date-range.dto';
+import { IntersectionType } from '@nestjs/mapped-types';
 
-export class QueryTaskDto {
-  @IsOptional()
-  page?: string;
-
-  @IsOptional()
-  limit?: string;
-
-  @IsOptional()
-  sortBy?: string;
-
-  @IsOptional()
-  sortOrder?: string;
-
-  @IsOptional()
-  @IsString()
-  search?: string;
-
+export class QueryTaskDto extends IntersectionType(PaginationDto, DateRangeDto) {
+  @ApiPropertyOptional({ enum: TaskStatus })
   @IsOptional()
   @IsEnum(TaskStatus)
   status?: TaskStatus;
 
+  @ApiPropertyOptional({ enum: TaskPriority })
   @IsOptional()
-  startDate?: string; // Date range filter: YYYY-MM-DD
+  @IsEnum(TaskPriority)
+  priority?: TaskPriority;
 
+  @ApiPropertyOptional({ description: 'Filter by user ID (admin only)' })
   @IsOptional()
-  endDate?: string;
+  @IsUUID()
+  userId?: string;
 }
 ```
 
----
-
-### Controller, Service & Module
-
-#### `src/modules/task/task.service.ts`
+### 2. Tasks Service (`src/modules/tasks/tasks.service.ts`)
 ```typescript
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
-import { paginationHelper } from '../../helpers/pagination.helper';
-import { Prisma, TaskStatus } from '@prisma/client';
+import { buildPaginationParams, buildPaginatedResult } from '../../common/utils/pagination.util';
+import { buildDateRangeFilter } from '../../common/utils/date-range.util';
+import { Prisma } from '@prisma/client';
+import { Role } from '../../common/enums/roles.enum';
 
 @Injectable()
-export class TaskService {
-  constructor(private prisma: PrismaService) {}
+export class TasksService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async createTask(userId: string, dto: CreateTaskDto) {
+  async create(userId: string, dto: CreateTaskDto) {
     const task = await this.prisma.task.create({
       data: {
         title: dto.title,
         description: dto.description,
+        priority: dto.priority || 'MEDIUM',
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         userId,
       },
     });
-    return {
-      message: 'Task created successfully',
-      data: task,
-    };
+
+    return { message: 'Task created successfully', data: task };
   }
 
-  async getMyTasks(userId: string, query: QueryTaskDto) {
-    const paginationOptions = paginationHelper.calculatePagination({
-      page: query.page ? Number(query.page) : undefined,
-      limit: query.limit ? Number(query.limit) : undefined,
-      sortBy: query.sortBy,
-      sortOrder: query.sortOrder,
-    });
+  async findAll(
+    requestingUserId: string,
+    requestingUserRole: string,
+    query: QueryTaskDto,
+  ) {
+    const params = buildPaginationParams(query);
+    const dateFilter = buildDateRangeFilter('createdAt', query);
 
-    const whereConditions: Prisma.TaskWhereInput = {
-      userId,
+    const ownerFilter =
+      requestingUserRole === Role.ADMIN
+        ? query.userId
+          ? { userId: query.userId }
+          : {}
+        : { userId: requestingUserId };
+
+    const where: Prisma.TaskWhereInput = {
+      ...ownerFilter,
+      ...(query.status && { status: query.status }),
+      ...(query.priority && { priority: query.priority }),
+      ...(query.search && {
+        OR: [
+          { title: { contains: query.search, mode: 'insensitive' } },
+          { description: { contains: query.search, mode: 'insensitive' } },
+        ],
+      }),
+      ...dateFilter,
     };
 
-    // 1. Text Search Filter
-    if (query.search) {
-      whereConditions.OR = [
-        { title: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
-      ];
-    }
+    const allowedSortFields = ['title', 'status', 'priority', 'dueDate', 'createdAt', 'updatedAt'];
+    const sortBy = allowedSortFields.includes(params.sortBy) ? params.sortBy : 'createdAt';
 
-    // 2. Status Filter
-    if (query.status) {
-      whereConditions.status = query.status;
-    }
+    const [tasks, total] = await this.prisma.$transaction([
+      this.prisma.task.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+        skip: params.skip,
+        take: params.limit,
+        orderBy: { [sortBy]: params.sortOrder },
+      }),
+      this.prisma.task.count({ where }),
+    ]);
 
-    // 3. Date Range Filter
-    if (query.startDate || query.endDate) {
-      whereConditions.createdAt = {};
-      
-      if (query.startDate) {
-        whereConditions.createdAt.gte = new Date(query.startDate);
-      }
-      
-      if (query.endDate) {
-        // Extend to end of the day
-        const end = new Date(query.endDate);
-        end.setHours(23, 59, 59, 999);
-        whereConditions.createdAt.lte = end;
-      }
-    }
+    return buildPaginatedResult(tasks, total, params);
+  }
 
-    const tasks = await this.prisma.task.findMany({
-      where: whereConditions,
-      skip: paginationOptions.skip,
-      take: paginationOptions.limit,
-      orderBy: {
-        [paginationOptions.sortBy]: paginationOptions.sortOrder,
+  async findOne(
+    taskId: string,
+    requestingUserId: string,
+    requestingUserRole: string,
+  ) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
       },
     });
 
-    const total = await this.prisma.task.count({ where: whereConditions });
+    if (!task) throw new NotFoundException(`Task with ID "${taskId}" not found`);
+
+    this.assertOwnerOrAdmin(task.userId, requestingUserId, requestingUserRole);
+
+    return task;
+  }
+
+  async update(
+    taskId: string,
+    requestingUserId: string,
+    requestingUserRole: string,
+    dto: UpdateTaskDto,
+  ) {
+    const task = await this.findOne(taskId, requestingUserId, requestingUserRole);
+
+    const updateData: Prisma.TaskUpdateInput = {
+      ...(dto.title !== undefined && { title: dto.title }),
+      ...(dto.description !== undefined && { description: dto.description }),
+      ...(dto.priority !== undefined && { priority: dto.priority }),
+      ...(dto.dueDate !== undefined && { dueDate: new Date(dto.dueDate) }),
+      ...(dto.status !== undefined && {
+        status: dto.status,
+        completedAt:
+          dto.status === 'COMPLETED'
+            ? new Date()
+            : dto.status === 'PENDING' || dto.status === 'IN_PROGRESS'
+            ? null
+            : undefined,
+      }),
+    };
+
+    const updated = await this.prisma.task.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    return { message: 'Task updated successfully', data: updated };
+  }
+
+  async markCompleted(
+    taskId: string,
+    requestingUserId: string,
+    requestingUserRole: string,
+  ) {
+    return this.update(taskId, requestingUserId, requestingUserRole, {
+      status: 'COMPLETED',
+    });
+  }
+
+  async remove(
+    taskId: string,
+    requestingUserId: string,
+    requestingUserRole: string,
+  ) {
+    await this.findOne(taskId, requestingUserId, requestingUserRole);
+
+    await this.prisma.task.delete({ where: { id: taskId } });
+
+    return { message: 'Task deleted successfully', data: null };
+  }
+
+  async getStats(userId: string, requestingUserRole: string) {
+    const scopedUserId = requestingUserRole === Role.ADMIN ? undefined : userId;
+
+    const [total, pending, inProgress, completed] = await Promise.all([
+      this.prisma.task.count({ where: { userId: scopedUserId } }),
+      this.prisma.task.count({ where: { userId: scopedUserId, status: 'PENDING' } }),
+      this.prisma.task.count({ where: { userId: scopedUserId, status: 'IN_PROGRESS' } }),
+      this.prisma.task.count({ where: { userId: scopedUserId, status: 'COMPLETED' } }),
+    ]);
 
     return {
-      message: 'Tasks retrieved successfully',
-      meta: {
-        page: paginationOptions.page,
-        limit: paginationOptions.limit,
-        total,
-      },
-      data: tasks,
+      message: 'Task statistics retrieved',
+      data: { total, pending, inProgress, completed },
     };
   }
 
-  async getTaskById(userId: string, taskId: string) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
+  private assertOwnerOrAdmin(
+    ownerId: string,
+    requestingUserId: string,
+    role: string,
+  ): void {
+    if (role !== Role.ADMIN && ownerId !== requestingUserId) {
+      throw new ForbiddenException('You do not have access to this task');
     }
-
-    if (task.userId !== userId) {
-      throw new UnauthorizedException('You do not own this task');
-    }
-
-    return {
-      message: 'Task retrieved successfully',
-      data: task,
-    };
-  }
-
-  async updateTask(userId: string, taskId: string, dto: UpdateTaskDto) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-
-    if (task.userId !== userId) {
-      throw new UnauthorizedException('You are not authorized to update this task');
-    }
-
-    const updatedTask = await this.prisma.task.update({
-      where: { id: taskId },
-      data: {
-        ...(dto.title && { title: dto.title }),
-        ...(dto.description && { description: dto.description }),
-        ...(dto.status && { status: dto.status }),
-      },
-    });
-
-    return {
-      message: 'Task updated successfully',
-      data: updatedTask,
-    };
-  }
-
-  async markAsCompleted(userId: string, taskId: string) {
-    return this.updateTask(userId, taskId, { status: TaskStatus.COMPLETED });
-  }
-
-  async deleteTask(userId: string, taskId: string) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-
-    if (task.userId !== userId) {
-      throw new UnauthorizedException('You are not authorized to delete this task');
-    }
-
-    await this.prisma.task.delete({
-      where: { id: taskId },
-    });
-
-    return {
-      message: 'Task deleted successfully',
-      data: { id: taskId },
-    };
   }
 }
 ```
 
-#### `src/modules/task/task.controller.ts`
+### 3. Tasks Controller (`src/modules/tasks/tasks.controller.ts`)
 ```typescript
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, UsePipes } from '@nestjs/common';
-import { TaskService } from './task.service';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
-import { AuthGuard } from '../../common/guards/auth.guard';
-import { CurrentUser } from '../../common/decorators/user.decorator';
-import { TrimPipe } from '../../common/pipes/trim.pipe';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '../../common/enums/roles.enum';
+import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
+@ApiTags('Tasks')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('tasks')
-@UseGuards(AuthGuard)
-export class TaskController {
-  constructor(private taskService: TaskService) {}
+export class TasksController {
+  constructor(private readonly tasksService: TasksService) {}
 
   @Post()
-  @UsePipes(new TrimPipe())
-  async createTask(@CurrentUser('userId') userId: string, @Body() dto: CreateTaskDto) {
-    return this.taskService.createTask(userId, dto);
+  @RequirePermissions(Permission.CREATE_TASK)
+  @ApiOperation({ summary: 'Create a new task' })
+  async create(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateTaskDto,
+  ) {
+    return this.tasksService.create(user.sub, dto);
   }
 
   @Get()
-  async getMyTasks(@CurrentUser('userId') userId: string, @Query() query: QueryTaskDto) {
-    return this.taskService.getMyTasks(userId, query);
+  @RequirePermissions(Permission.READ_OWN_TASKS)
+  @ApiOperation({
+    summary: 'List tasks. Users see own; Admin sees all. Supports pagination, search, filter, sort, date range.',
+  })
+  async findAll(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: QueryTaskDto,
+  ) {
+    const result = await this.tasksService.findAll(user.sub, user.role, query);
+    return {
+      message: 'Tasks retrieved successfully',
+      data: result.data,
+      meta: result.meta,
+    };
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Get task statistics for the current user' })
+  async getStats(@CurrentUser() user: JwtPayload) {
+    return this.tasksService.getStats(user.sub, user.role);
   }
 
   @Get(':id')
-  async getTaskById(@CurrentUser('userId') userId: string, @Param('id') taskId: string) {
-    return this.taskService.getTaskById(userId, taskId);
+  @RequirePermissions(Permission.READ_OWN_TASKS)
+  @ApiOperation({ summary: 'Get a single task by ID' })
+  async findOne(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tasksService.findOne(id, user.sub, user.role);
   }
 
   @Patch(':id')
-  @UsePipes(new TrimPipe())
-  async updateTask(
-    @CurrentUser('userId') userId: string,
-    @Param('id') taskId: string,
-    @Body() dto: UpdateTaskDto
+  @RequirePermissions(Permission.UPDATE_OWN_TASK)
+  @ApiOperation({ summary: 'Update a task' })
+  async update(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTaskDto,
   ) {
-    return this.taskService.updateTask(userId, taskId, dto);
+    return this.tasksService.update(id, user.sub, user.role, dto);
   }
 
-  @Patch(':id/completed')
-  async markAsCompleted(@CurrentUser('userId') userId: string, @Param('id') taskId: string) {
-    return this.taskService.markAsCompleted(userId, taskId);
+  @Patch(':id/complete')
+  @RequirePermissions(Permission.UPDATE_OWN_TASK)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark task as completed' })
+  async markCompleted(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tasksService.markCompleted(id, user.sub, user.role);
   }
 
   @Delete(':id')
-  async deleteTask(@CurrentUser('userId') userId: string, @Param('id') taskId: string) {
-    return this.taskService.deleteTask(userId, taskId);
+  @RequirePermissions(Permission.DELETE_OWN_TASK)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a task' })
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tasksService.remove(id, user.sub, user.role);
   }
 }
 ```
 
-#### `src/modules/task/task.module.ts`
+#### `src/modules/tasks/tasks.module.ts`
 ```typescript
 import { Module } from '@nestjs/common';
-import { TaskController } from './task.controller';
-import { TaskService } from './task.service';
+import { TasksController } from './tasks.controller';
+import { TasksService } from './tasks.service';
 
 @Module({
-  controllers: [TaskController],
-  providers: [TaskService],
+  controllers: [TasksController],
+  providers: [TasksService],
 })
-export class TaskModule {}
+export class TasksModule {}
 ```
 
 ---
 
-## 11. Application Configuration & Bootstrap
+## 10. Root Application Setup & Wiring
 
-Connect all pipes, filters, interceptors, and modules together inside the main files.
-
-### `src/app.module.ts`
+### 1. Main App Module (`src/app.module.ts`)
 ```typescript
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, APP_GUARD } from '@nestjs/throttler';
+import appConfig from './config/app.config';
+import jwtConfig from './config/jwt.config';
+import redisConfig from './config/redis.config';
+import mailConfig from './config/mail.config';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { UserModule } from './modules/user/user.module';
-import { TaskModule } from './modules/task/task.module';
-import { apiLimiter, authLimiter } from './common/middlewares/rate-limit.middleware';
+import { UsersModule } from './modules/users/users.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [appConfig, jwtConfig, redisConfig, mailConfig],
+    }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100,
+    }]),
     PrismaModule,
     RedisModule,
     MailModule,
     AuthModule,
-    UserModule,
-    TaskModule,
+    UsersModule,
+    TasksModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CustomThrottlerGuard,
+    },
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    // Register windowed rate limiting middlewares
-    consumer.apply(authLimiter).forRoutes('auth/login', 'auth/verify-otp');
-    consumer.apply(apiLimiter).forRoutes('tasks', 'users');
-  }
-}
+export class AppModule {}
 ```
 
-### `src/main.ts`
+### 2. Main Entry Point (`src/main.ts`)
 ```typescript
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { CustomValidationPipe } from './common/pipes/validation.pipe';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import * as cookieParser from 'cookie-parser';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Parse request cookies
-  app.use(cookieParser());
+  const configService = app.get(ConfigService);
+  const port = configService.get<number>('app.port') || 3000;
 
-  // Enable CORS
+  app.setGlobalPrefix('api/v1');
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: '*',
     credentials: true,
   });
 
-  // Standard Nest DTO validation configurations
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true, // remove unrecognized fields
-      forbidNonWhitelisted: true, // throw exception if extra fields exist
-      transform: true, // auto-convert path/query parameters
-    }),
-  );
-
-  // Centralize all outputs
+  app.useGlobalPipes(new CustomValidationPipe());
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`Server is running successfully on http://localhost:${port}`);
-}
+  const config = new DocumentBuilder()
+    .setTitle('Todo App API')
+    .setDescription('The Todo Application API description')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
 
+  await app.listen(port);
+  console.log(`Application is running on: http://localhost:${port}/api/v1`);
+  console.log(`Swagger documentation: http://localhost:${port}/api/docs`);
+}
 bootstrap();
 ```
 
 ---
 
-## 12. Automated Testing Examples
+## 11. Seeding & Running
 
-### Unit Test: `src/modules/task/task.service.spec.ts`
-Tests task creation, fetch logic with query filters, updates, and deletes.
-
+### Admin Seeder Script (`src/seed/seed.ts`)
 ```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { TaskService } from './task.service';
-import { PrismaService } from '../../prisma/prisma.service';
-import { TaskStatus } from '@prisma/client';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { PrismaClient, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-describe('TaskService', () => {
-  let service: TaskService;
-  let prisma: PrismaService;
+dotenv.config({ path: path.join(process.cwd(), '.env') });
 
-  const mockPrismaService = {
-    task: {
-      create: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-      findUnique: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+const prisma = new PrismaClient();
+
+async function seedAdmin() {
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env');
+  }
+
+  const existing = await prisma.user.findFirst({ where: { role: Role.ADMIN } });
+
+  if (existing) {
+    console.log('✅ Super Admin already exists, skipping seed.');
+    return;
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  const admin = await prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+      name: 'Super Admin',
+      role: Role.ADMIN,
+      isVerified: true,
+      status: 'ACTIVE',
     },
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        TaskService,
-        { provide: PrismaService, useValue: mockPrismaService },
-      ],
-    }).compile();
-
-    service = module.get<TaskService>(TaskService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
-  it('should create a task successfully', async () => {
-    const dto = { title: 'Test Task', description: 'Test Desc' };
-    const mockTask = { id: 'task-1', title: 'Test Task', description: 'Test Desc', userId: 'user-1', status: TaskStatus.PENDING };
-    mockPrismaService.task.create.mockResolvedValue(mockTask);
+  console.log('🌱 Super Admin seeded:', admin.email);
+}
 
-    const result = await service.createTask('user-1', dto);
-
-    expect(result.data).toEqual(mockTask);
-    expect(prisma.task.create).toHaveBeenCalledWith({
-      data: { title: dto.title, description: dto.description, userId: 'user-1' },
-    });
-  });
-
-  it('should get task by ID if owned by user', async () => {
-    const mockTask = { id: 'task-1', title: 'Test Task', userId: 'user-1' };
-    mockPrismaService.task.findUnique.mockResolvedValue(mockTask);
-
-    const result = await service.getTaskById('user-1', 'task-1');
-    expect(result.data).toEqual(mockTask);
-  });
-
-  it('should throw UnauthorizedException if task not owned by requesting user', async () => {
-    const mockTask = { id: 'task-1', title: 'Test Task', userId: 'user-2' };
-    mockPrismaService.task.findUnique.mockResolvedValue(mockTask);
-
-    await expect(service.getTaskById('user-1', 'task-1')).rejects.toThrow(
-      UnauthorizedException,
-    );
-  });
-
-  it('should throw NotFoundException if task does not exist', async () => {
-    mockPrismaService.task.findUnique.mockResolvedValue(null);
-
-    await expect(service.getTaskById('user-1', 'task-invalid')).rejects.toThrow(
-      NotFoundException,
-    );
-  });
-});
+seedAdmin()
+  .catch((e) => {
+    console.error('Seed failed:', e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
 ```
 
-### E2E Integration Test: `test/auth.e2e-spec.ts`
-Tests Registration and Login validation endpoints.
-
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
-import { AppModule } from '../src/app.module';
-
-describe('AuthController (e2e)', () => {
-  let app: INestApplication;
-
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  it('/auth/register (POST) - Error if email invalid', () => {
-    return request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ email: 'bad-email', password: '123' })
-      .expect(400)
-      .expect((res) => {
-        expect(res.body.success).toBe(false);
-        expect(res.body.message).toContain('email');
-      });
-  });
-
-  it('/auth/login (POST) - Error if credentials missing', () => {
-    return request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: '' })
-      .expect(400);
-  });
-});
+Add the following to your `package.json` scripts:
+```json
+{
+  "scripts": {
+    "seed": "ts-node src/seed/seed.ts"
+  }
+}
 ```
 
-To execute tests, use the standard commands:
+To seed the database, run:
 ```bash
-# Run unit tests
-npm run test
-
-# Run End-To-End (e2e) tests
-npm run test:e2e
+npm run seed
 ```

@@ -14,21 +14,21 @@ The request flows through several layers, each serving a specific security, vali
 ```
 Request (from Client)
   │
-  ├──► 1. Middleware (Rate limiting, Body parser, Cookie parser, Request logger)
+  ├──► 1. Middleware (Cookie parser, body parser, standard CORS filters)
   │
-  ├──► 2. Guards (Auth Check: Is the user logged in? Do they have the required Role?)
+  ├──► 2. Guards (Throttler rate limiter guard, Auth check guard, Roles verification guard)
   │
-  ├──► 3. Interceptors (Before Controller logic starts: timing/logging)
+  ├──► 3. Interceptors (Before Controller logic starts: logging or timing)
   │
   ├──► 4. Pipes (ValidationPipe: Validate DTOs, parse/trim input fields)
   │
   ├──► 5. Controller (Route mapping, parameter parsing)
   │
-  ├──► 6. Service (Database queries, external APIs, business rules)
+  ├──► 6. Service (Database queries, Redis cache lookups, emails, business rules)
   │
   ├──► 7. Controller return value
   │
-  ├──► 8. Interceptors (After Controller logic finishes: formats standard responses)
+  ├──► 8. Interceptors (After Controller logic finishes: formats standard success responses)
   │
   ├──► 9. Exception Filters (Runs only if an error is thrown: formats standard error responses)
   │
@@ -45,34 +45,22 @@ To ensure the codebase remains clean, maintainable, and scalable, we organize ou
 ```
 task-manager/
 ├── prisma/
-│   └── schema.prisma          # Database models (Prisma v7 schema)
+│   └── schema/                # Multi-file schema directory (Prisma v7)
+│       ├── schema.prisma      # Datasource and generator configuration
+│       ├── user.prisma        # User & Admin models
+│       └── task.prisma        # Task model
 ├── src/
 │   ├── main.ts                # Application entrypoint
 │   ├── app.module.ts          # Main application module
-│   ├── config/                # Configuration management
-│   │   ├── config.module.ts
-│   │   └── config.service.ts
-│   ├── common/                # Shared decorators, guards, filters, interceptors
-│   │   ├── decorators/
-│   │   │   ├── roles.decorator.ts
-│   │   │   └── user.decorator.ts
-│   │   ├── filters/
-│   │   │   └── global-exception.filter.ts
-│   │   ├── guards/
-│   │   │   ├── auth.guard.ts
-│   │   │   └── roles.guard.ts
-│   │   ├── interceptors/
-│   │   │   └── response.interceptor.ts
-│   │   ├── middlewares/
-│   │   │   └── rate-limit.middleware.ts
-│   │   └── pipes/
-│   │       └── trim.pipe.ts
+│   ├── config.ts              # Configuration loader module (injectable config)
+│   ├── shared/
+│   │   └── prisma.ts          # Shared Prisma client instance
 │   ├── helpers/               # Utility functions
-│   │   ├── cookies.helper.ts
-│   │   ├── jwt.helper.ts
-│   │   ├── pagination.helper.ts
-│   │   ├── pick.ts
-│   │   └── token.ts
+│   │   ├── cookies.ts         # setAuthCookie helper
+│   │   ├── paginationHelper.ts # calculatePagination helper
+│   │   ├── pick.ts            # pick helper
+│   │   ├── token.ts           # convertExpiresInToMs helper
+│   │   └── tokenService.ts    # TokenService provider using @nestjs/jwt
 │   ├── prisma/                # Prisma ORM module
 │   │   ├── prisma.module.ts
 │   │   └── prisma.service.ts
@@ -84,6 +72,19 @@ task-manager/
 │   │   │   └── otp.ejs
 │   │   ├── mail.module.ts
 │   │   └── mail.service.ts
+│   ├── common/                # Shared decorators, guards, filters, interceptors
+│   │   ├── decorators/
+│   │   │   ├── roles.decorator.ts
+│   │   │   └── user.decorator.ts
+│   │   ├── filters/
+│   │   │   └── global-exception.filter.ts
+│   │   ├── guards/
+│   │   │   ├── auth.guard.ts
+│   │   │   └── roles.guard.ts
+│   │   ├── interceptors/
+│   │   │   └── response.interceptor.ts
+│   │   └── pipes/
+│   │       └── trim.pipe.ts
 │   └── modules/               # Feature modules
 │       ├── auth/              # Registration, Login, OTP verification
 │       │   ├── dto/
@@ -123,10 +124,10 @@ Run the following commands in your terminal to install the correct packages:
 
 ```bash
 # 1. Install regular dependencies
-npm install @nestjs/config ioredis nodemailer ejs bcryptjs jsonwebtoken class-validator class-transformer express-rate-limit cookie-parser http-status @prisma/client@7
+npm install @nestjs/common @nestjs/core @nestjs/platform-express @nestjs/config @nestjs/jwt @nestjs/throttler ioredis nodemailer ejs bcryptjs class-validator class-transformer cookie-parser @prisma/client@7 uuid cors dotenv http-status http-status-codes
 
 # 2. Install dev dependencies
-npm install -D prisma@7 @types/nodemailer @types/ejs @types/bcryptjs @types/jsonwebtoken @types/cookie-parser @types/express @nestjs/testing ts-jest jest
+npm install -D prisma@7 @types/nodemailer @types/ejs @types/bcryptjs @types/cookie-parser @types/express @types/node @types/cors cpx ts-node ts-node-dev tsx typescript@^5.9.3 @nestjs/cli @nestjs/testing ts-jest jest @types/jest supertest @types/supertest
 ```
 
 ### Step 2: Set Up Environment Variables
@@ -136,7 +137,7 @@ Create a `.env` file in the root directory:
 NODE_ENV=development
 PORT=3000
 DATABASE_URL="postgresql://postgres:password@localhost:5432/taskdb?schema=public"
-FRONTEND_URL="http://localhost:3000"
+FRONTEND_URL="https://eventra-frontend-neon.vercel.app"
 
 # Redis Config
 REDIS_URL="redis://localhost:6379"
@@ -164,9 +165,9 @@ ADMIN_PASSWORD="SuperSecretAdminPassword123!"
 
 ## 4. Prisma v7 Configuration
 
-Create a folder named `prisma` in the root of your project, and create a file inside named `schema.prisma`.
+Create a folder named `prisma` and a subfolder `schema` in the root of your project.
 
-### `prisma/schema.prisma`
+### `prisma/schema/schema.prisma`
 ```prisma
 datasource db {
   provider = "postgresql"
@@ -176,7 +177,10 @@ datasource db {
 generator client {
   provider = "prisma-client-js"
 }
+```
 
+### `prisma/schema/user.prisma`
+```prisma
 enum UserRole {
   ADMIN
   USER
@@ -187,11 +191,6 @@ enum UserStatus {
   SUSPENDED
   DELETED
   PENDING
-}
-
-enum TaskStatus {
-  PENDING
-  COMPLETED
 }
 
 model User {
@@ -216,6 +215,14 @@ model Admin {
   userId        String   @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+```
+
+### `prisma/schema/task.prisma`
+```prisma
+enum TaskStatus {
+  PENDING
+  COMPLETED
 }
 
 model Task {
@@ -338,7 +345,6 @@ export class RedisModule {}
 ---
 
 ### Mail Module & Service (Nodemailer + EJS templates)
-Create `src/mail/mail.service.ts`, `src/mail/mail.module.ts` and EJS template.
 
 #### `src/mail/templates/otp.ejs`
 Create a folder `src/mail/templates` and place `otp.ejs` inside it:
@@ -372,7 +378,7 @@ Create a folder `src/mail/templates` and place `otp.ejs` inside it:
 
 #### `src/mail/mail.service.ts`
 ```typescript
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import * as ejs from 'ejs';
@@ -413,8 +419,17 @@ export class MailService {
         html,
       });
     } catch (error: any) {
-      throw new Error(`Email sending failed: ${error.message}`);
+      throw new BadRequestException(`Email sending failed: ${error.message}`);
     }
+  }
+
+  async sendOtp(to: string, otp: string) {
+    await this.sendEmail({
+      to,
+      subject: 'Login OTP Code',
+      templateName: 'otp',
+      templateData: { otp }
+    });
   }
 }
 ```
@@ -462,29 +477,7 @@ export const convertExpiresInToMs = (expiresIn: string, defaultMs: number): numb
 };
 ```
 
-### `src/helpers/jwt.helper.ts`
-```typescript
-import * as jwt from 'jsonwebtoken';
-import { JwtPayload, Secret, SignOptions } from 'jsonwebtoken';
-
-const generateToken = (payload: JwtPayload, secret: Secret, expiresIn: string): string => {
-  return jwt.sign(payload, secret, {
-    algorithm: "HS256",
-    expiresIn
-  } as SignOptions);
-};
-
-const verifyToken = (token: string, secret: Secret): JwtPayload => {
-  return jwt.verify(token, secret) as JwtPayload;
-};
-
-export const jwtHelper = {
-  generateToken,
-  verifyToken
-};
-```
-
-### `src/helpers/pagination.helper.ts`
+### `src/helpers/paginationHelper.ts`
 ```typescript
 export type IOptions = {
   page?: number;
@@ -523,7 +516,7 @@ export const paginationHelper = {
 };
 ```
 
-### `src/helpers/cookies.helper.ts`
+### `src/helpers/cookies.ts`
 ```typescript
 import { Response } from 'express';
 
@@ -538,16 +531,16 @@ export const setAuthCookie = (res: Response, tokenInfo: AuthToken) => {
   if (tokenInfo.accessToken) {
     res.cookie('accessToken', tokenInfo.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: tokenInfo.accessTokenMaxAge || 1000 * 60 * 15, // 15 mins default
     });
   }
   if (tokenInfo.refreshToken) {
     res.cookie('refreshToken', tokenInfo.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: tokenInfo.refreshTokenMaxAge || 1000 * 60 * 60 * 24 * 7, // 7 days default
     });
   }
@@ -574,21 +567,115 @@ const pick = <T extends Record<string, any>, K extends keyof T>(
 export default pick;
 ```
 
+### `src/helpers/tokenService.ts`
+Uses `@nestjs/jwt` to issue and verify JSON Web Tokens natively.
+```typescript
+import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { ConfigService } from "@nestjs/config";
+import { User, UserStatus } from "@prisma/client";
+import prisma from "../shared/prisma";
+
+@Injectable()
+export class TokenService {
+  constructor(
+    private jwtService: JwtService,
+    private configService: ConfigService
+  ) {}
+
+  createUserToken(user: Partial<User>) {
+    const jwtPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const accessToken = this.jwtService.sign(jwtPayload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+      expiresIn: this.configService.get<string>('EXPIRES_IN'),
+    });
+
+    const refreshToken = this.jwtService.sign(jwtPayload, {
+      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
+      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN'),
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  async createNewAccessTokenWithRefreshToken(refreshToken: string) {
+    let verifiedRefreshToken;
+    try {
+      verifiedRefreshToken = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
+      });
+    } catch (error) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    if (!verifiedRefreshToken || !verifiedRefreshToken.email) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: verifiedRefreshToken.email },
+    });
+
+    if (!user) {
+      throw new BadRequestException("User does not exist");
+    }
+
+    if (user.status === UserStatus.DELETED || user.status === UserStatus.SUSPENDED) {
+      throw new BadRequestException(`User status is ${user.status}`);
+    }
+    if (user.status === UserStatus.PENDING) {
+      throw new BadRequestException(
+        `Your Host account is still pending for approval. Please wait for the admin to approve your account!.`
+      );
+    }
+
+    const jwtPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const accessToken = this.jwtService.sign(jwtPayload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+      expiresIn: this.configService.get<string>('EXPIRES_IN'),
+    });
+
+    const newRefreshToken = this.jwtService.sign(jwtPayload, {
+      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
+      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN'),
+    });
+
+    return { 
+      accessToken, 
+      refreshToken: newRefreshToken, 
+      needPasswordChange: user.needPasswordChange 
+    };
+  }
+}
+```
+
 ---
 
 ## 7. Global Pipes, Guards, Interceptors, Exception Filters
 
 ### Global Exception Filter
 Handles formatting standard error messages for Prisma database exceptions, NestJS HTTP Exceptions, and validation errors.
-
 #### `src/common/filters/global-exception.filter.ts`
 ```typescript
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  constructor(private configService: ConfigService) {}
+
   catch(exception: any, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -626,6 +713,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message = exception.message;
     }
 
+    const nodeEnv = this.configService.get<string>('node_env') || 'development';
+
     response.status(statusCode).json({
       success: false,
       message,
@@ -633,7 +722,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         statusCode,
         message,
         details: errorDetails,
-        stack: process.env.NODE_ENV === 'development' ? exception.stack : undefined,
+        stack: nodeEnv === 'development' ? exception.stack : undefined,
       },
     });
   }
@@ -644,7 +733,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
 ### Global Response Interceptor
 Formats all successful responses globally.
-
 #### `src/common/interceptors/response.interceptor.ts`
 ```typescript
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
@@ -668,7 +756,6 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, ResponseFormat
 
     return next.handle().pipe(
       map((result) => {
-        // If results contain paginated attributes structured directly, extract them
         const message = result?.message || 'Operation successful';
         const data = result?.data !== undefined ? result.data : result;
         const meta = result?.meta ?? undefined;
@@ -714,16 +801,17 @@ export const CurrentUser = createParamDecorator((data: string | undefined, ctx: 
 ```typescript
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { jwtHelper } from '../../helpers/jwt.helper';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private jwtService: JwtService,
+    private configService: ConfigService
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    
-    // Check cookies first, then authorization headers
     let token = request.cookies?.['accessToken'];
     
     if (!token && request.headers.authorization) {
@@ -739,7 +827,7 @@ export class AuthGuard implements CanActivate {
 
     try {
       const secret = this.configService.get<string>('JWT_SECRET');
-      const decoded = jwtHelper.verifyToken(token, secret);
+      const decoded = this.jwtService.verify(token, { secret });
       request.user = decoded;
       return true;
     } catch (error) {
@@ -786,10 +874,6 @@ export class RolesGuard implements CanActivate {
 }
 ```
 
----
-
-### Custom Pipe & Rate Limiting Middleware
-
 #### `src/common/pipes/trim.pipe.ts`
 ```typescript
 import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
@@ -813,49 +897,9 @@ export class TrimPipe implements PipeTransform {
 }
 ```
 
-#### `src/common/middlewares/rate-limit.middleware.ts`
-Uses `express-rate-limit` windowed rate limiting to shield routes.
-
-```typescript
-import rateLimit from 'express-rate-limit';
-
-export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.',
-    error: {
-      statusCode: 429,
-      message: 'Too many requests from this IP, please try again later.'
-    }
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10, // limit each IP to 10 login/verify attempts per 15 minutes
-  message: {
-    success: false,
-    message: 'Too many login attempts, please try again later.',
-    error: {
-      statusCode: 429,
-      message: 'Too many login attempts, please try again later.'
-    }
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-});
-```
-
 ---
 
 ## 8. AuthModule (Registration, OTP, Redis login, Seed Super Admin)
-
-Create controllers, services, modules, and seeding logic inside `src/modules/auth`.
 
 ### DTOs
 
@@ -909,7 +953,7 @@ export class VerifyOtpDto {
 ---
 
 ### Super Admin Seeder
-Seers a Super Admin dynamically during project bootstrap.
+Seeds a Super Admin dynamically during project bootstrap.
 
 #### `src/modules/auth/seedAdmin.ts`
 ```typescript
@@ -932,7 +976,7 @@ export class SeedSuperAdmin implements OnApplicationBootstrap {
     try {
       const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
       const adminPassword = this.configService.get<string>('ADMIN_PASSWORD');
-      const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 10;
+      const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 12;
 
       const adminExists = await this.prisma.user.findFirst({
         where: { role: UserRole.ADMIN },
@@ -985,8 +1029,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { UserRole, UserStatus } from '@prisma/client';
-import { jwtHelper } from '../../helpers/jwt.helper';
-import { convertExpiresInToMs } from '../../helpers/token';
+import { TokenService } from '../../helpers/tokenService';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -995,6 +1038,7 @@ export class AuthService {
     private prisma: PrismaService,
     private redis: RedisService,
     private mail: MailService,
+    private tokenService: TokenService,
     private configService: ConfigService
   ) {}
 
@@ -1007,7 +1051,7 @@ export class AuthService {
       throw new BadRequestException('User with this email already exists');
     }
 
-    const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 10;
+    const saltRound = Number(this.configService.get<string>('SALT_ROUND')) || 12;
     const hashedPassword = await bcrypt.hash(dto.password, saltRound);
 
     const user = await this.prisma.user.create({
@@ -1043,20 +1087,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid login credentials');
     }
 
-    // Generate random 6 digit OTP code
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Store in Redis with 5 minutes TTL
     const redisKey = `otp:${dto.email}`;
     await this.redis.set(redisKey, otp, 300);
 
-    // Send OTP using MailService with EJS templates
-    await this.mail.sendEmail({
-      to: dto.email,
-      subject: 'Your OTP Login Code',
-      templateName: 'otp',
-      templateData: { otp, email: dto.email },
-    });
+    await this.mail.sendOtp(dto.email, otp);
 
     return {
       message: 'A 6-digit OTP code has been sent to your email. Please verify OTP to sign in.',
@@ -1072,7 +1107,6 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired OTP code');
     }
 
-    // Remove OTP from Redis
     await this.redis.del(redisKey);
 
     const user = await this.prisma.user.findUnique({
@@ -1083,59 +1117,23 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Generate Tokens
-    const { accessToken, refreshToken } = this.generateTokens(user);
+    const tokens = this.tokenService.createUserToken(user);
 
     return {
       message: 'OTP validation successful. Logged in successfully.',
       data: {
         user: { id: user.id, email: user.email, role: user.role },
-        accessToken,
-        refreshToken,
+        ...tokens
       },
     };
   }
 
   async refreshTokens(token: string) {
-    try {
-      const refreshSecret = this.configService.get<string>('REFRESH_TOKEN_SECRET');
-      const payload = jwtHelper.verifyToken(token, refreshSecret);
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.userId },
-      });
-
-      if (!user || user.status === UserStatus.SUSPENDED || user.status === UserStatus.DELETED) {
-        throw new UnauthorizedException('User account has been suspended or deleted');
-      }
-
-      const { accessToken, refreshToken } = this.generateTokens(user);
-
-      return {
-        message: 'Tokens refreshed successfully.',
-        data: { accessToken, refreshToken },
-      };
-    } catch (error) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-  }
-
-  private generateTokens(user: any) {
-    const payload = { userId: user.id, email: user.email, role: user.role };
-    
-    const accessToken = jwtHelper.generateToken(
-      payload,
-      this.configService.get<string>('JWT_SECRET'),
-      this.configService.get<string>('EXPIRES_IN')
-    );
-
-    const refreshToken = jwtHelper.generateToken(
-      payload,
-      this.configService.get<string>('REFRESH_TOKEN_SECRET'),
-      this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN')
-    );
-
-    return { accessToken, refreshToken };
+    const result = await this.tokenService.createNewAccessTokenWithRefreshToken(token);
+    return {
+      message: 'Tokens refreshed successfully.',
+      data: result,
+    };
   }
 }
 ```
@@ -1153,7 +1151,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { TrimPipe } from '../../common/pipes/trim.pipe';
 import { Response, Request } from 'express';
-import { setAuthCookie } from '../../helpers/cookies.helper';
+import { setAuthCookie } from '../../helpers/cookies';
 import { convertExpiresInToMs } from '../../helpers/token';
 import { ConfigService } from '@nestjs/config';
 
@@ -1181,8 +1179,8 @@ export class AuthController {
   async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.verifyOtp(dto);
 
-    const accessExpiry = this.configService.get<string>('EXPIRES_IN');
-    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN');
+    const accessExpiry = this.configService.get<string>('EXPIRES_IN') || '15m';
+    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d';
 
     setAuthCookie(res, {
       accessToken: result.data.accessToken,
@@ -1206,8 +1204,8 @@ export class AuthController {
 
     const result = await this.authService.refreshTokens(rToken);
 
-    const accessExpiry = this.configService.get<string>('EXPIRES_IN');
-    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN');
+    const accessExpiry = this.configService.get<string>('EXPIRES_IN') || '15m';
+    const refreshExpiry = this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d';
 
     setAuthCookie(res, {
       accessToken: result.data.accessToken,
@@ -1238,10 +1236,11 @@ import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SeedSuperAdmin } from './seedAdmin';
+import { TokenService } from '../../helpers/tokenService';
 
 @Module({
   controllers: [AuthController],
-  providers: [AuthService, SeedSuperAdmin],
+  providers: [AuthService, SeedSuperAdmin, TokenService],
 })
 export class AuthModule {}
 ```
@@ -1349,7 +1348,7 @@ import { UserRole } from '@prisma/client';
 
 @Controller('users')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN) // Admin only routes
+@Roles(UserRole.ADMIN)
 export class UserController {
   constructor(private userService: UserService) {}
 
@@ -1465,7 +1464,7 @@ export class QueryTaskDto {
   status?: TaskStatus;
 
   @IsOptional()
-  startDate?: string; // Date range filter: YYYY-MM-DD
+  startDate?: string;
 
   @IsOptional()
   endDate?: string;
@@ -1483,7 +1482,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
-import { paginationHelper } from '../../helpers/pagination.helper';
+import { paginationHelper } from '../../helpers/paginationHelper';
 import { Prisma, TaskStatus } from '@prisma/client';
 
 @Injectable()
@@ -1516,7 +1515,6 @@ export class TaskService {
       userId,
     };
 
-    // 1. Text Search Filter
     if (query.search) {
       whereConditions.OR = [
         { title: { contains: query.search, mode: 'insensitive' } },
@@ -1524,12 +1522,10 @@ export class TaskService {
       ];
     }
 
-    // 2. Status Filter
     if (query.status) {
       whereConditions.status = query.status;
     }
 
-    // 3. Date Range Filter
     if (query.startDate || query.endDate) {
       whereConditions.createdAt = {};
       
@@ -1538,7 +1534,6 @@ export class TaskService {
       }
       
       if (query.endDate) {
-        // Extend to end of the day
         const end = new Date(query.endDate);
         end.setHours(23, 59, 59, 999);
         whereConditions.createdAt.lte = end;
@@ -1550,7 +1545,7 @@ export class TaskService {
       skip: paginationOptions.skip,
       take: paginationOptions.limit,
       orderBy: {
-        [paginationOptions.sortBy]: paginationOptions.sortOrder,
+        [paginationOptions.sortBy]: paginationOptions.sortOrder as any,
       },
     });
 
@@ -1714,23 +1709,34 @@ export class TaskModule {}
 
 ## 11. Application Configuration & Bootstrap
 
-Connect all pipes, filters, interceptors, and modules together inside the main files.
-
 ### `src/app.module.ts`
 ```typescript
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { TaskModule } from './modules/task/task.module';
-import { apiLimiter, authLimiter } from './common/middlewares/rate-limit.middleware';
+import config from './config';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [config],
+    }),
+    JwtModule.register({
+      global: true,
+    }),
+    ThrottlerModule.forRoot([{
+      ttl: 15 * 60 * 1000,
+      limit: 1000,
+    }]),
     PrismaModule,
     RedisModule,
     MailModule,
@@ -1738,14 +1744,14 @@ import { apiLimiter, authLimiter } from './common/middlewares/rate-limit.middlew
     UserModule,
     TaskModule,
   ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    // Register windowed rate limiting middlewares
-    consumer.apply(authLimiter).forRoutes('auth/login', 'auth/verify-otp');
-    consumer.apply(apiLimiter).forRoutes('tasks', 'users');
-  }
-}
+export class AppModule {}
 ```
 
 ### `src/main.ts`
@@ -1755,36 +1761,36 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Parse request cookies
   app.use(cookieParser());
 
-  // Enable CORS
+  const configService = app.get(ConfigService);
+  const frontendUrl = configService.get<string>('frontend_url') || 'https://eventra-frontend-neon.vercel.app';
+  const port = configService.get<number>('port') || 3000;
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: frontendUrl,
     credentials: true,
   });
 
-  // Standard Nest DTO validation configurations
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // remove unrecognized fields
-      forbidNonWhitelisted: true, // throw exception if extra fields exist
-      transform: true, // auto-convert path/query parameters
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Centralize all outputs
   app.useGlobalInterceptors(new ResponseInterceptor());
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter(configService));
 
-  const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Server is running successfully on http://localhost:${port}`);
+  console.log(`Server is running successfully on port ${port}`);
 }
 
 bootstrap();
@@ -1795,8 +1801,6 @@ bootstrap();
 ## 12. Automated Testing Examples
 
 ### Unit Test: `src/modules/task/task.service.spec.ts`
-Tests task creation, fetch logic with query filters, updates, and deletes.
-
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
 import { TaskService } from './task.service';
@@ -1872,8 +1876,6 @@ describe('TaskService', () => {
 ```
 
 ### E2E Integration Test: `test/auth.e2e-spec.ts`
-Tests Registration and Login validation endpoints.
-
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
