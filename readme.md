@@ -1,100 +1,17 @@
 # NestJS Task Manager: Complete Step-by-Step Production Guide
 
-This guide contains the complete, production-ready codebase and setup instructions for building a highly scalable and maintainable **NestJS** application. It integrates **Prisma v7**, **PostgreSQL**, **Redis**, **Nodemailer**, **Passport JWT**, and **Sliding-Window Rate Limiting**.
-
-All codeblocks are fully defined, production-ready, and copy-pasteable.
-
----
-
-## 1. Directory & Folder Structure
-
-This structure separates concerns logically by grouping components into **infrastructure** layers (`prisma`, `redis`, `mail`, `config`), **common** helpers (decorators, guards, filters, interceptors, pipes, utils), and **modules** (business domains: auth, users, tasks).
-
-```
-src/
-├── common/
-│   ├── decorators/
-│   │   ├── current-user.decorator.ts
-│   │   ├── roles.decorator.ts
-│   │   ├── permissions.decorator.ts
-│   │   ├── public.decorator.ts
-│   │   └── api-paginated-response.decorator.ts
-│   ├── dto/
-│   │   ├── pagination.dto.ts
-│   │   ├── date-range.dto.ts
-│   │   └── paginated-response.dto.ts
-│   ├── enums/
-│   │   └── roles.enum.ts
-│   ├── filters/
-│   │   └── global-exception.filter.ts
-│   ├── guards/
-│   │   ├── jwt-auth.guard.ts
-│   │   ├── roles.guard.ts
-│   │   ├── permissions.guard.ts
-│   │   └── throttler.guard.ts
-│   ├── interceptors/
-│   │   └── response.interceptor.ts
-│   ├── interfaces/
-│   │   ├── jwt-payload.interface.ts
-│   │   └── paginated-result.interface.ts
-│   ├── pipes/
-│   │   └── validation.pipe.ts
-│   └── utils/
-│       ├── pagination.util.ts
-│       ├── date-range.util.ts
-│       └── hash.util.ts
-├── config/
-│   ├── app.config.ts
-│   ├── jwt.config.ts
-│   ├── redis.config.ts
-│   └── mail.config.ts
-├── modules/
-│   ├── auth/
-│   │   ├── auth.controller.ts
-│   │   ├── auth.service.ts
-│   │   ├── auth.module.ts
-│   │   ├── strategies/
-│   │   │   └── jwt.strategy.ts
-│   │   └── dto/
-│   │       ├── register.dto.ts
-│   │       ├── login.dto.ts
-│   │       ├── verify-otp.dto.ts
-│   │       └── refresh-token.dto.ts
-│   ├── users/
-│   │   ├── users.controller.ts
-│   │   ├── users.service.ts
-│   │   ├── users.module.ts
-│   │   └── dto/
-│   │       ├── update-user.dto.ts
-│   │       └── query-user.dto.ts
-│   └── tasks/
-│       ├── tasks.controller.ts
-│       ├── tasks.service.ts
-│       ├── tasks.module.ts
-│       └── dto/
-│           ├── create-task.dto.ts
-│           ├── update-task.dto.ts
-│           └── query-task.dto.ts
-├── prisma/
-│   ├── prisma.module.ts
-│   └── prisma.service.ts
-├── mail/
-│   ├── mail.module.ts
-│   └── mail.service.ts
-├── redis/
-│   ├── redis.module.ts
-│   └── redis.service.ts
-├── seed/
-│   └── seed.ts
-├── app.module.ts
-└── main.ts
-```
+This guide contains the complete, production-ready codebase, setup commands, and explanation for building a highly scalable NestJS application. It is organized into 5 parts:
+- **Part 1**: Setup, Folder Structure, Prisma Schema, Configuration, and Infrastructure Services
+- **Part 2**: Common Shared Layer (Guards, Filters, Interceptors, Decorators, Pipes, and Utilities)
+- **Part 3**: Authentication and Security Module
+- **Part 4**: Users & Tasks Modules (CRUD, Pagination, Filters)
+- **Part 5**: Root Application Wiring, Seeding, and Running
 
 ---
 
-## 2. Installation & Setup
+# Part 1: Setup, Configuration & Infrastructure Services
 
-Initialize your NestJS application and install the core dependencies:
+## 1. Installation & Bootstrap
 
 ```bash
 # 1. Install NestJS CLI globally
@@ -141,49 +58,87 @@ npm install -D \
 npx prisma init
 ```
 
-### Environment Variables (`.env`)
+---
 
-Create a `.env` file in your root folder:
+## 2. Folder Structure
 
-```env
-# App
-NODE_ENV=development
-PORT=3000
-
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/todo_db?schema=public"
-
-# JWT
-JWT_SECRET=your_jwt_secret_here_min_32_chars
-JWT_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=your_refresh_secret_here_min_32_chars
-JWT_REFRESH_EXPIRES_IN=7d
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Mail (SMTP)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_USER=your@gmail.com
-SMTP_PASS=your_app_password
-SMTP_FROM="Todo App <your@gmail.com>"
-
-# Admin Seed
-ADMIN_EMAIL=admin@todo.com
-ADMIN_PASSWORD=Admin@123456
-
-# OTP
-OTP_EXPIRES_MINUTES=5
+```
+src/
+├── common/
+│   ├── decorators/
+│   │   ├── current-user.decorator.ts
+│   │   ├── roles.decorator.ts
+│   │   └── public.decorator.ts
+│   ├── dto/
+│   │   └── pagination.dto.ts
+│   ├── enums/
+│   │   └── roles.enum.ts
+│   ├── filters/
+│   │   └── global-exception.filter.ts
+│   ├── guards/
+│   │   ├── jwt-auth.guard.ts
+│   │   ├── roles.guard.ts
+│   │   └── permissions.guard.ts
+│   ├── interceptors/
+│   │   └── response.interceptor.ts
+│   ├── pipes/
+│   │   └── validation.pipe.ts
+│   └── utils/
+│       ├── pagination.util.ts
+│       └── date-range.util.ts
+├── config/
+│   ├── app.config.ts
+│   ├── jwt.config.ts
+│   ├── redis.config.ts
+│   └── mail.config.ts
+├── modules/
+│   ├── auth/
+│   │   ├── auth.controller.ts
+│   │   ├── auth.service.ts
+│   │   ├── auth.module.ts
+│   │   ├── strategies/
+│   │   │   ├── jwt.strategy.ts
+│   │   │   └── local.strategy.ts
+│   │   └── dto/
+│   │       ├── register.dto.ts
+│   │       ├── login.dto.ts
+│   │       ├── verify-otp.dto.ts
+│   │       └── refresh-token.dto.ts
+│   ├── users/
+│   │   ├── users.controller.ts
+│   │   ├── users.service.ts
+│   │   ├── users.module.ts
+│   │   └── dto/
+│   │       ├── update-user.dto.ts
+│   │       └── query-user.dto.ts
+│   └── tasks/
+│       ├── tasks.controller.ts
+│       ├── tasks.service.ts
+│       ├── tasks.module.ts
+│       └── dto/
+│           ├── create-task.dto.ts
+│           ├── update-task.dto.ts
+│           └── query-task.dto.ts
+├── prisma/
+│   ├── prisma.module.ts
+│   └── prisma.service.ts
+├── mail/
+│   ├── mail.module.ts
+│   ├── mail.service.ts
+│   └── templates/
+│       └── otp.template.ts
+├── redis/
+│   ├── redis.module.ts
+│   └── redis.service.ts
+├── seed/
+│   └── seed.ts
+├── app.module.ts
+└── main.ts
 ```
 
 ---
 
-## 3. Database Layer & Prisma Schema (`prisma/schema.prisma`)
-
-We use a database-mapped schema for users and tasks:
+## 3. Prisma Schema (`prisma/schema.prisma`)
 
 ```prisma
 generator client {
@@ -254,7 +209,6 @@ model Task {
 }
 ```
 
-Run schema migrations and generate client:
 ```bash
 npx prisma migrate dev --name init
 npx prisma generate
@@ -262,11 +216,48 @@ npx prisma generate
 
 ---
 
-## 4. Configuration Layer
+## 4. Environment Variables (`.env`)
 
-### Centralized Config Modules (`src/config/`)
+```env
+# App
+NODE_ENV=development
+PORT=3000
 
-#### `src/config/app.config.ts`
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/todo_db?schema=public"
+
+# JWT
+JWT_SECRET=your_jwt_secret_here_min_32_chars
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=your_refresh_secret_here_min_32_chars
+JWT_REFRESH_EXPIRES_IN=7d
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Mail (SMTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your@gmail.com
+SMTP_PASS=your_app_password
+SMTP_FROM="Todo App <your@gmail.com>"
+
+# Admin Seed
+ADMIN_EMAIL=admin@todo.com
+ADMIN_PASSWORD=Admin@123456
+
+# OTP
+OTP_EXPIRES_MINUTES=5
+```
+
+---
+
+## 5. Config Files
+
+### `src/config/app.config.ts`
+
 ```typescript
 import { registerAs } from '@nestjs/config';
 
@@ -278,7 +269,8 @@ export default registerAs('app', () => ({
 }));
 ```
 
-#### `src/config/jwt.config.ts`
+### `src/config/jwt.config.ts`
+
 ```typescript
 import { registerAs } from '@nestjs/config';
 
@@ -290,7 +282,8 @@ export default registerAs('jwt', () => ({
 }));
 ```
 
-#### `src/config/redis.config.ts`
+### `src/config/redis.config.ts`
+
 ```typescript
 import { registerAs } from '@nestjs/config';
 
@@ -301,7 +294,8 @@ export default registerAs('redis', () => ({
 }));
 ```
 
-#### `src/config/mail.config.ts`
+### `src/config/mail.config.ts`
+
 ```typescript
 import { registerAs } from '@nestjs/config';
 
@@ -317,11 +311,8 @@ export default registerAs('mail', () => ({
 
 ---
 
-## 5. Infrastructure Services
+## 6. Prisma Service (`src/prisma/prisma.service.ts`)
 
-### Prisma Service & Module
-
-#### `src/prisma/prisma.service.ts`
 ```typescript
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
@@ -352,12 +343,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 }
 ```
 
-#### `src/prisma/prisma.module.ts`
+### `src/prisma/prisma.module.ts`
+
 ```typescript
 import { Global, Module } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 
-@Global()
+@Global() // Makes PrismaService available everywhere without re-importing
 @Module({
   providers: [PrismaService],
   exports: [PrismaService],
@@ -365,11 +357,12 @@ import { PrismaService } from './prisma.service';
 export class PrismaModule {}
 ```
 
-### Redis Service & Module
+---
 
-#### `src/redis/redis.service.ts`
+## 7. Redis Service (`src/redis/redis.service.ts`)
+
 ```typescript
-import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -416,7 +409,8 @@ export class RedisService implements OnModuleDestroy {
 }
 ```
 
-#### `src/redis/redis.module.ts`
+### `src/redis/redis.module.ts`
+
 ```typescript
 import { Global, Module } from '@nestjs/common';
 import { RedisService } from './redis.service';
@@ -429,9 +423,10 @@ import { RedisService } from './redis.service';
 export class RedisModule {}
 ```
 
-### Mail Service & Module
+---
 
-#### `src/mail/mail.service.ts`
+## 8. Mail Service (`src/mail/mail.service.ts`)
+
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -494,7 +489,8 @@ export class MailService {
 }
 ```
 
-#### `src/mail/mail.module.ts`
+### `src/mail/mail.module.ts`
+
 ```typescript
 import { Global, Module } from '@nestjs/common';
 import { MailService } from './mail.service';
@@ -509,9 +505,73 @@ export class MailModule {}
 
 ---
 
-## 6. Common Module Components (Guards, Filters, Interceptors, Decorators, DTOs, & Utils)
+## 9. Seeder (`src/seed/seed.ts`)
 
-### 1. Enums (`src/common/enums/roles.enum.ts`)
+```typescript
+import { PrismaClient, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.join(process.cwd(), '.env') });
+
+const prisma = new PrismaClient();
+
+async function seedAdmin() {
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env');
+  }
+
+  const existing = await prisma.user.findFirst({ where: { role: Role.ADMIN } });
+
+  if (existing) {
+    console.log('✅ Super Admin already exists, skipping seed.');
+    return;
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  const admin = await prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+      name: 'Super Admin',
+      role: Role.ADMIN,
+      isVerified: true,
+      status: 'ACTIVE',
+    },
+  });
+
+  console.log('🌱 Super Admin seeded:', admin.email);
+}
+
+seedAdmin()
+  .catch((e) => {
+    console.error('Seed failed:', e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
+```
+
+Add to `package.json`:
+```json
+{
+  "scripts": {
+    "seed": "ts-node src/seed/seed.ts"
+  }
+}
+```
+
+
+---
+
+# Part 2: Common Shared Layer
+
+## 1. Enums (`src/common/enums/roles.enum.ts`)
+
 ```typescript
 export enum Role {
   ADMIN = 'ADMIN',
@@ -544,43 +604,16 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.READ_OWN_PROFILE,
     Permission.UPDATE_OWN_PROFILE,
   ],
-  [Role.ADMIN]: Object.values(Permission),
+  [Role.ADMIN]: Object.values(Permission), // Admin has all permissions
 };
 ```
 
-### 2. Interfaces (`src/common/interfaces/`)
+---
 
-#### `src/common/interfaces/jwt-payload.interface.ts`
-```typescript
-import { Role } from '../enums/roles.enum';
+## 2. Decorators
 
-export interface JwtPayload {
-  sub: string;
-  email: string;
-  role: Role;
-  iat?: number;
-  exp?: number;
-}
-```
+### `src/common/decorators/current-user.decorator.ts`
 
-#### `src/common/interfaces/paginated-result.interface.ts`
-```typescript
-export interface PaginatedResult<T> {
-  data: T[];
-  meta: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-}
-```
-
-### 3. Decorators (`src/common/decorators/`)
-
-#### `src/common/decorators/current-user.decorator.ts`
 ```typescript
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
@@ -594,7 +627,8 @@ export const CurrentUser = createParamDecorator(
 );
 ```
 
-#### `src/common/decorators/roles.decorator.ts`
+### `src/common/decorators/roles.decorator.ts`
+
 ```typescript
 import { SetMetadata } from '@nestjs/common';
 import { Role } from '../enums/roles.enum';
@@ -603,7 +637,8 @@ export const ROLES_KEY = 'roles';
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 ```
 
-#### `src/common/decorators/permissions.decorator.ts`
+### `src/common/decorators/permissions.decorator.ts`
+
 ```typescript
 import { SetMetadata } from '@nestjs/common';
 import { Permission } from '../enums/roles.enum';
@@ -613,7 +648,8 @@ export const RequirePermissions = (...permissions: Permission[]) =>
   SetMetadata(PERMISSIONS_KEY, permissions);
 ```
 
-#### `src/common/decorators/public.decorator.ts`
+### `src/common/decorators/public.decorator.ts`
+
 ```typescript
 import { SetMetadata } from '@nestjs/common';
 
@@ -621,7 +657,8 @@ export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 ```
 
-#### `src/common/decorators/api-paginated-response.decorator.ts`
+### `src/common/decorators/api-paginated-response.decorator.ts`
+
 ```typescript
 import { applyDecorators, Type } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, getSchemaPath } from '@nestjs/swagger';
@@ -648,9 +685,46 @@ export const ApiPaginatedResponse = <TModel extends Type<any>>(model: TModel) =>
   );
 ```
 
-### 4. DTOs (`src/common/dto/`)
+---
 
-#### `src/common/dto/pagination.dto.ts`
+## 3. Interfaces (`src/common/interfaces/`)
+
+### `jwt-payload.interface.ts`
+
+```typescript
+import { Role } from '../enums/roles.enum';
+
+export interface JwtPayload {
+  sub: string;       // userId
+  email: string;
+  role: Role;
+  iat?: number;
+  exp?: number;
+}
+```
+
+### `paginated-result.interface.ts`
+
+```typescript
+export interface PaginatedResult<T> {
+  data: T[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+```
+
+---
+
+## 4. DTOs
+
+### `src/common/dto/pagination.dto.ts`
+
 ```typescript
 import { IsOptional, IsPositive, IsString, IsIn, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -688,7 +762,8 @@ export class PaginationDto {
 }
 ```
 
-#### `src/common/dto/date-range.dto.ts`
+### `src/common/dto/date-range.dto.ts`
+
 ```typescript
 import { IsOptional, IsDateString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -706,7 +781,8 @@ export class DateRangeDto {
 }
 ```
 
-#### `src/common/dto/paginated-response.dto.ts`
+### `src/common/dto/paginated-response.dto.ts`
+
 ```typescript
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -728,7 +804,12 @@ export class PaginatedResponseDto<T> {
 }
 ```
 
-### 5. Exception Filter (`src/common/filters/global-exception.filter.ts`)
+---
+
+## 5. Filters — Global Exception Filter
+
+### `src/common/filters/global-exception.filter.ts`
+
 ```typescript
 import {
   ArgumentsHost,
@@ -790,6 +871,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     code?: string;
     details?: unknown;
   } {
+    // NestJS HTTP Exception
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
@@ -808,10 +890,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return { statusCode: status, message: exception.message };
     }
 
+    // Prisma Known Errors
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       return this.handlePrismaError(exception);
     }
 
+    // Prisma Validation Error
     if (exception instanceof Prisma.PrismaClientValidationError) {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
@@ -821,6 +905,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       };
     }
 
+    // Prisma Init Error
     if (exception instanceof Prisma.PrismaClientInitializationError) {
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -829,6 +914,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       };
     }
 
+    // JWT errors
     if (exception instanceof Error) {
       if (exception.name === 'JsonWebTokenError') {
         return { statusCode: HttpStatus.UNAUTHORIZED, message: 'Invalid token', code: 'INVALID_TOKEN' };
@@ -838,6 +924,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }
     }
 
+    // Fallback
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
@@ -889,7 +976,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 }
 ```
 
-### 6. Interceptor (`src/common/interceptors/response.interceptor.ts`)
+---
+
+## 6. Interceptors — Centralized Response
+
+### `src/common/interceptors/response.interceptor.ts`
+
 ```typescript
 import {
   CallHandler,
@@ -921,6 +1013,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, SuccessRespons
 
     return next.handle().pipe(
       map((result) => {
+        // Controllers can return { message, data, meta } objects
         const isStructured =
           result && typeof result === 'object' && ('data' in result || 'message' in result);
 
@@ -938,9 +1031,12 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, SuccessRespons
 }
 ```
 
-### 7. Custom Guards (`src/common/guards/`)
+---
 
-#### `src/common/guards/jwt-auth.guard.ts`
+## 7. Guards
+
+### `src/common/guards/jwt-auth.guard.ts`
+
 ```typescript
 import {
   ExecutionContext,
@@ -981,7 +1077,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 }
 ```
 
-#### `src/common/guards/roles.guard.ts`
+### `src/common/guards/roles.guard.ts`
+
 ```typescript
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -1017,7 +1114,8 @@ export class RolesGuard implements CanActivate {
 }
 ```
 
-#### `src/common/guards/permissions.guard.ts`
+### `src/common/guards/permissions.guard.ts`
+
 ```typescript
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -1054,80 +1152,12 @@ export class PermissionsGuard implements CanActivate {
 }
 ```
 
-#### `src/common/guards/throttler.guard.ts` (Sliding Window Guard)
-```typescript
-import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
-import { Injectable, ExecutionContext } from '@nestjs/common';
+---
 
-@Injectable()
-export class CustomThrottlerGuard extends ThrottlerGuard {
-  protected async throwThrottlingException(
-    context: ExecutionContext,
-    throttlerLimitDetail: any,
-  ): Promise<void> {
-    throw new ThrottlerException(
-      `Rate limit exceeded. Try again in ${Math.ceil(
-        throttlerLimitDetail.timeToExpire / 1000,
-      )} seconds.`,
-    );
-  }
+## 8. Utils
 
-  protected async getTracker(req: Record<string, any>): Promise<string> {
-    const userId = req.user?.sub;
-    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-    return userId ? `${userId}:${ip}` : ip;
-  }
-}
-```
+### `src/common/utils/pagination.util.ts`
 
-### 8. Pipes (`src/common/pipes/validation.pipe.ts`)
-```typescript
-import {
-  PipeTransform,
-  Injectable,
-  ArgumentMetadata,
-  BadRequestException,
-} from '@nestjs/common';
-import { validate } from 'class-validator';
-import { plainToInstance } from 'class-transformer';
-
-@Injectable()
-export class CustomValidationPipe implements PipeTransform<any> {
-  async transform(value: any, { metatype }: ArgumentMetadata) {
-    if (!metatype || !this.toValidate(metatype)) {
-      return value;
-    }
-
-    const object = plainToInstance(metatype, value);
-    const errors = await validate(object, {
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      skipMissingProperties: false,
-    });
-
-    if (errors.length > 0) {
-      const messages = errors.flatMap((err) =>
-        Object.values(err.constraints || {}),
-      );
-      throw new BadRequestException({
-        message: messages,
-        error: 'Validation Failed',
-      });
-    }
-
-    return object;
-  }
-
-  private toValidate(metatype: Function): boolean {
-    const types: Function[] = [String, Boolean, Number, Array, Object];
-    return !types.includes(metatype);
-  }
-}
-```
-
-### 9. Utility Helpers (`src/common/utils/`)
-
-#### `src/common/utils/pagination.util.ts`
 ```typescript
 import { PaginationDto } from '../dto/pagination.dto';
 import { PaginatedResult } from '../interfaces/paginated-result.interface';
@@ -1171,7 +1201,8 @@ export function buildPaginatedResult<T>(
 }
 ```
 
-#### `src/common/utils/date-range.util.ts`
+### `src/common/utils/date-range.util.ts`
+
 ```typescript
 import { DateRangeDto } from '../dto/date-range.dto';
 
@@ -1187,6 +1218,7 @@ export function buildDateRangeFilter(
     filter.gte = new Date(dateRange.startDate);
   }
   if (dateRange.endDate) {
+    // Include full end day
     const end = new Date(dateRange.endDate);
     end.setHours(23, 59, 59, 999);
     filter.lte = end;
@@ -1196,7 +1228,8 @@ export function buildDateRangeFilter(
 }
 ```
 
-#### `src/common/utils/hash.util.ts`
+### `src/common/utils/hash.util.ts`
+
 ```typescript
 import * as bcrypt from 'bcryptjs';
 
@@ -1222,11 +1255,95 @@ export function generateOtp(length = 6): string {
 
 ---
 
-## 7. Authentication Module
+## 9. Validation Pipe (`src/common/pipes/validation.pipe.ts`)
 
-### 1. DTOs (`src/modules/auth/dto/`)
+```typescript
+import {
+  PipeTransform,
+  Injectable,
+  ArgumentMetadata,
+  BadRequestException,
+} from '@nestjs/common';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 
-#### `src/modules/auth/dto/register.dto.ts`
+@Injectable()
+export class CustomValidationPipe implements PipeTransform<any> {
+  async transform(value: any, { metatype }: ArgumentMetadata) {
+    if (!metatype || !this.toValidate(metatype)) {
+      return value;
+    }
+
+    const object = plainToInstance(metatype, value);
+    const errors = await validate(object, {
+      whitelist: true,          // strip unknown fields
+      forbidNonWhitelisted: true, // throw on unknown fields
+      skipMissingProperties: false,
+    });
+
+    if (errors.length > 0) {
+      const messages = errors.flatMap((err) =>
+        Object.values(err.constraints || {}),
+      );
+      throw new BadRequestException({
+        message: messages,
+        error: 'Validation Failed',
+      });
+    }
+
+    return object;
+  }
+
+  private toValidate(metatype: Function): boolean {
+    const types: Function[] = [String, Boolean, Number, Array, Object];
+    return !types.includes(metatype);
+  }
+}
+```
+
+---
+
+## 10. Throttler (Windowed Rate Limiting) Setup
+
+NestJS `@nestjs/throttler` implements a **sliding window / fixed window** rate limiter.
+
+### Custom throttler guard (`src/common/guards/throttler.guard.ts`)
+
+```typescript
+import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
+import { Injectable, ExecutionContext } from '@nestjs/common';
+
+@Injectable()
+export class CustomThrottlerGuard extends ThrottlerGuard {
+  protected async throwThrottlingException(
+    context: ExecutionContext,
+    throttlerLimitDetail: any,
+  ): Promise<void> {
+    throw new ThrottlerException(
+      `Rate limit exceeded. Try again in ${Math.ceil(
+        throttlerLimitDetail.timeToExpire / 1000,
+      )} seconds.`,
+    );
+  }
+
+  // Use IP + user ID as key when authenticated
+  protected async getTracker(req: Record<string, any>): Promise<string> {
+    const userId = req.user?.sub;
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return userId ? `${userId}:${ip}` : ip;
+  }
+}
+```
+
+
+---
+
+# Part 3: Authentication & Security Module
+
+## 1. Auth DTOs
+
+### `src/modules/auth/dto/register.dto.ts`
+
 ```typescript
 import {
   IsEmail,
@@ -1268,7 +1385,8 @@ export class RegisterDto {
 }
 ```
 
-#### `src/modules/auth/dto/login.dto.ts`
+### `src/modules/auth/dto/login.dto.ts`
+
 ```typescript
 import { IsEmail, IsString, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -1287,7 +1405,8 @@ export class LoginDto {
 }
 ```
 
-#### `src/modules/auth/dto/verify-otp.dto.ts`
+### `src/modules/auth/dto/verify-otp.dto.ts`
+
 ```typescript
 import { IsEmail, IsString, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -1306,7 +1425,8 @@ export class VerifyOtpDto {
 }
 ```
 
-#### `src/modules/auth/dto/refresh-token.dto.ts`
+### `src/modules/auth/dto/refresh-token.dto.ts`
+
 ```typescript
 import { IsString, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -1319,7 +1439,10 @@ export class RefreshTokenDto {
 }
 ```
 
-### 2. Passport JWT Strategy (`src/modules/auth/strategies/jwt.strategy.ts`)
+---
+
+## 2. JWT Strategy (`src/modules/auth/strategies/jwt.strategy.ts`)
+
 ```typescript
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
@@ -1342,6 +1465,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: JwtPayload): Promise<JwtPayload> {
+    // Validate user still exists and is active
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, status: true },
@@ -1357,7 +1481,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 }
 ```
 
-### 3. Auth Service (`src/modules/auth/auth.service.ts`)
+---
+
+## 3. Auth Service (`src/modules/auth/auth.service.ts`)
+
 ```typescript
 import {
   BadRequestException,
@@ -1376,13 +1503,14 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { comparePassword, generateOtp, hashPassword } from '../../common/utils/hash.util';
-import { Role } from '../../common/enums/roles.enum';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
+import { Role } from '../../common/enums/roles.enum';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // Redis key namespaces
   private readonly OTP_PREFIX = 'otp:';
   private readonly OTP_ATTEMPTS_PREFIX = 'otp_attempts:';
   private readonly REFRESH_PREFIX = 'refresh:';
@@ -1394,6 +1522,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
   ) {}
+
+  // ─── REGISTER ────────────────────────────────────────────────────────────────
 
   async register(dto: RegisterDto) {
     const exists = await this.prisma.user.findUnique({
@@ -1417,6 +1547,7 @@ export class AuthService {
       select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
 
+    // Send OTP for email verification on first login
     this.logger.log(`New user registered: ${user.email}`);
 
     return {
@@ -1424,6 +1555,8 @@ export class AuthService {
       data: user,
     };
   }
+
+  // ─── LOGIN (step 1: validate credentials → send OTP) ─────────────────────────
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
@@ -1448,6 +1581,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    // Generate and store OTP in Redis
     const otp = generateOtp(6);
     const otpKey = `${this.OTP_PREFIX}${user.email}`;
     const attemptsKey = `${this.OTP_ATTEMPTS_PREFIX}${user.email}`;
@@ -1456,6 +1590,7 @@ export class AuthService {
     await this.redis.set(otpKey, otp, expireMinutes * 60);
     await this.redis.set(attemptsKey, '0', expireMinutes * 60);
 
+    // Send OTP via email
     await this.mail.sendOtp(user.email, otp, user.name);
 
     return {
@@ -1463,6 +1598,8 @@ export class AuthService {
       data: { email: user.email },
     };
   }
+
+  // ─── VERIFY OTP (step 2: validate OTP → issue JWT) ──────────────────────────
 
   async verifyOtp(dto: VerifyOtpDto) {
     const otpKey = `${this.OTP_PREFIX}${dto.email}`;
@@ -1474,6 +1611,7 @@ export class AuthService {
       throw new BadRequestException('OTP has expired or was never sent. Please login again.');
     }
 
+    // Max 5 wrong attempts
     const attemptsStr = await this.redis.get(attemptsKey);
     const attempts = parseInt(attemptsStr || '0', 10);
 
@@ -1490,6 +1628,7 @@ export class AuthService {
       );
     }
 
+    // OTP valid → clean up Redis
     await this.redis.del(otpKey);
     await this.redis.del(attemptsKey);
 
@@ -1500,6 +1639,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('User not found');
 
+    // Mark as verified if first login
     await this.prisma.user.update({
       where: { id: user.id },
       data: { isVerified: true },
@@ -1516,6 +1656,8 @@ export class AuthService {
     };
   }
 
+  // ─── REFRESH TOKEN ────────────────────────────────────────────────────────────
+
   async refreshTokens(refreshToken: string) {
     let payload: JwtPayload;
 
@@ -1527,9 +1669,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    // Check if refresh token is blacklisted / rotated
     const storedToken = await this.redis.get(`${this.REFRESH_PREFIX}${payload.sub}`);
 
     if (storedToken && storedToken !== refreshToken) {
+      // Token reuse detected → invalidate all tokens (security measure)
       await this.redis.del(`${this.REFRESH_PREFIX}${payload.sub}`);
       throw new UnauthorizedException('Refresh token reuse detected. Please login again.');
     }
@@ -1551,10 +1695,14 @@ export class AuthService {
     };
   }
 
+  // ─── LOGOUT ───────────────────────────────────────────────────────────────────
+
   async logout(userId: string) {
     await this.redis.del(`${this.REFRESH_PREFIX}${userId}`);
     return { message: 'Logged out successfully', data: null };
   }
+
+  // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────────
 
   private async generateTokens(userId: string, email: string, role: Role) {
     const payload: JwtPayload = { sub: userId, email, role };
@@ -1570,6 +1718,7 @@ export class AuthService {
       }),
     ]);
 
+    // Store refresh token in Redis for rotation validation
     const expireSeconds = 7 * 24 * 60 * 60; // 7 days
     await this.redis.set(`${this.REFRESH_PREFIX}${userId}`, refreshToken, expireSeconds);
 
@@ -1578,7 +1727,10 @@ export class AuthService {
 }
 ```
 
-### 4. Auth Controller (`src/modules/auth/auth.controller.ts`)
+---
+
+## 4. Auth Controller (`src/modules/auth/auth.controller.ts`)
+
 ```typescript
 import {
   Body,
@@ -1611,9 +1763,10 @@ import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // POST /api/v1/auth/register
   @Public()
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 per minute
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiResponse({ status: 201, description: 'User registered successfully' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
@@ -1621,15 +1774,17 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
+  // POST /api/v1/auth/login
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 per minute (windowed)
   @ApiOperation({ summary: 'Login with credentials (sends OTP)' })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  // POST /api/v1/auth/verify-otp
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
@@ -1639,6 +1794,7 @@ export class AuthController {
     return this.authService.verifyOtp(dto);
   }
 
+  // POST /api/v1/auth/refresh
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
@@ -1647,6 +1803,7 @@ export class AuthController {
     return this.authService.refreshTokens(dto.refreshToken);
   }
 
+  // POST /api/v1/auth/logout
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
@@ -1658,7 +1815,10 @@ export class AuthController {
 }
 ```
 
-### 5. Auth Module (`src/modules/auth/auth.module.ts`)
+---
+
+## 5. Auth Module (`src/modules/auth/auth.module.ts`)
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
@@ -1670,7 +1830,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({}),
+    JwtModule.register({}), // Configured dynamically in service via JwtService.signAsync options
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
@@ -1679,13 +1839,17 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 export class AuthModule {}
 ```
 
+
 ---
 
-## 8. Users Module
+# Part 4: Users & Tasks Modules
 
-### 1. DTOs (`src/modules/users/dto/`)
+## ══════════════════ USERS MODULE ══════════════════
 
-#### `src/modules/users/dto/query-user.dto.ts`
+## 1. User DTOs
+
+### `src/modules/users/dto/query-user.dto.ts`
+
 ```typescript
 import { IsOptional, IsEnum, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -1703,11 +1867,12 @@ export class QueryUserDto extends IntersectionType(PaginationDto, DateRangeDto) 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  search?: string;
+  search?: string; // Inherited from PaginationDto; documented again for clarity
 }
 ```
 
-#### `src/modules/users/dto/update-user.dto.ts`
+### `src/modules/users/dto/update-user.dto.ts`
+
 ```typescript
 import {
   IsString,
@@ -1728,6 +1893,7 @@ export class UpdateUserDto {
   name?: string;
 }
 
+// Admin-only update DTO
 export class AdminUpdateUserDto extends UpdateUserDto {
   @ApiPropertyOptional({ enum: UserStatus })
   @IsOptional()
@@ -1736,7 +1902,10 @@ export class AdminUpdateUserDto extends UpdateUserDto {
 }
 ```
 
-### 2. Users Service (`src/modules/users/users.service.ts`)
+---
+
+## 2. Users Service (`src/modules/users/users.service.ts`)
+
 ```typescript
 import {
   ForbiddenException,
@@ -1754,12 +1923,15 @@ import { Prisma } from '@prisma/client';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ─── ADMIN: GET ALL USERS ──────────────────────────────────────────────────
+
   async findAll(query: QueryUserDto) {
     const params = buildPaginationParams(query);
     const dateFilter = buildDateRangeFilter('createdAt', query);
 
+    // Build where clause
     const where: Prisma.UserWhereInput = {
-      role: 'USER',
+      role: 'USER', // Admins only see user accounts (not other admins)
       ...(query.status && { status: query.status }),
       ...(query.search && {
         OR: [
@@ -1770,6 +1942,7 @@ export class UsersService {
       ...dateFilter,
     };
 
+    // Validate sortBy field against allowed columns
     const allowedSortFields = ['name', 'email', 'createdAt', 'status'];
     const sortBy = allowedSortFields.includes(params.sortBy) ? params.sortBy : 'createdAt';
 
@@ -1797,6 +1970,8 @@ export class UsersService {
     return buildPaginatedResult(users, total, params);
   }
 
+  // ─── GET ONE USER ──────────────────────────────────────────────────────────
+
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -1818,8 +1993,10 @@ export class UsersService {
     return user;
   }
 
+  // ─── USER: UPDATE OWN PROFILE ──────────────────────────────────────────────
+
   async updateProfile(userId: string, dto: UpdateUserDto) {
-    await this.findOne(userId);
+    await this.findOne(userId); // Ensure exists
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -1833,8 +2010,10 @@ export class UsersService {
     return { message: 'Profile updated successfully', data: updated };
   }
 
+  // ─── ADMIN: UPDATE ANY USER ────────────────────────────────────────────────
+
   async adminUpdateUser(id: string, dto: AdminUpdateUserDto) {
-    await this.findOne(id);
+    await this.findOne(id); // Ensure exists
 
     const updated = await this.prisma.user.update({
       where: { id },
@@ -1851,6 +2030,8 @@ export class UsersService {
     return { message: 'User updated successfully', data: updated };
   }
 
+  // ─── ADMIN: SOFT DELETE (MARK AS DELETED) ─────────────────────────────────
+
   async deleteUser(id: string) {
     const user = await this.findOne(id);
 
@@ -1866,6 +2047,8 @@ export class UsersService {
     return { message: 'User deleted successfully', data: null };
   }
 
+  // ─── ADMIN: SUSPEND / ACTIVATE ────────────────────────────────────────────
+
   async suspendUser(id: string) {
     await this.findOne(id);
     await this.prisma.user.update({ where: { id }, data: { status: 'SUSPENDED' } });
@@ -1880,7 +2063,10 @@ export class UsersService {
 }
 ```
 
-### 3. Users Controller (`src/modules/users/users.controller.ts`)
+---
+
+## 3. Users Controller (`src/modules/users/users.controller.ts`)
+
 ```typescript
 import {
   Body,
@@ -1919,6 +2105,9 @@ import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  // ─── USER: Own Profile ─────────────────────────────────────────────────────
+
+  // GET /api/v1/users/me
   @Get('me')
   @RequirePermissions(Permission.READ_OWN_PROFILE)
   @ApiOperation({ summary: 'Get own profile' })
@@ -1926,6 +2115,7 @@ export class UsersController {
     return this.usersService.findOne(user.sub);
   }
 
+  // PATCH /api/v1/users/me
   @Patch('me')
   @RequirePermissions(Permission.UPDATE_OWN_PROFILE)
   @ApiOperation({ summary: 'Update own profile' })
@@ -1936,6 +2126,9 @@ export class UsersController {
     return this.usersService.updateProfile(user.sub, dto);
   }
 
+  // ─── ADMIN: User Management ────────────────────────────────────────────────
+
+  // GET /api/v1/users  (admin only)
   @Get()
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.READ_ALL_USERS)
@@ -1949,6 +2142,7 @@ export class UsersController {
     };
   }
 
+  // GET /api/v1/users/:id  (admin only)
   @Get(':id')
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.READ_ALL_USERS)
@@ -1957,6 +2151,7 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
+  // PATCH /api/v1/users/:id  (admin only)
   @Patch(':id')
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.UPDATE_ANY_USER)
@@ -1968,6 +2163,7 @@ export class UsersController {
     return this.usersService.adminUpdateUser(id, dto);
   }
 
+  // PATCH /api/v1/users/:id/suspend  (admin only)
   @Patch(':id/suspend')
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.SUSPEND_USER)
@@ -1977,6 +2173,7 @@ export class UsersController {
     return this.usersService.suspendUser(id);
   }
 
+  // PATCH /api/v1/users/:id/activate  (admin only)
   @Patch(':id/activate')
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.UPDATE_ANY_USER)
@@ -1986,6 +2183,7 @@ export class UsersController {
     return this.usersService.activateUser(id);
   }
 
+  // DELETE /api/v1/users/:id  (admin only — soft delete)
   @Delete(':id')
   @Roles(Role.ADMIN)
   @RequirePermissions(Permission.DELETE_ANY_USER)
@@ -1997,7 +2195,8 @@ export class UsersController {
 }
 ```
 
-#### `src/modules/users/users.module.ts`
+### `src/modules/users/users.module.ts`
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { UsersController } from './users.controller';
@@ -2013,11 +2212,12 @@ export class UsersModule {}
 
 ---
 
-## 9. Tasks Module
+## ══════════════════ TASKS MODULE ══════════════════
 
-### 1. DTOs (`src/modules/tasks/dto/`)
+## 4. Task DTOs
 
-#### `src/modules/tasks/dto/create-task.dto.ts`
+### `src/modules/tasks/dto/create-task.dto.ts`
+
 ```typescript
 import {
   IsString,
@@ -2055,7 +2255,8 @@ export class CreateTaskDto {
 }
 ```
 
-#### `src/modules/tasks/dto/update-task.dto.ts`
+### `src/modules/tasks/dto/update-task.dto.ts`
+
 ```typescript
 import { PartialType } from '@nestjs/mapped-types';
 import { IsEnum, IsOptional } from 'class-validator';
@@ -2071,7 +2272,8 @@ export class UpdateTaskDto extends PartialType(CreateTaskDto) {
 }
 ```
 
-#### `src/modules/tasks/dto/query-task.dto.ts`
+### `src/modules/tasks/dto/query-task.dto.ts`
+
 ```typescript
 import { IsOptional, IsEnum, IsString, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -2098,7 +2300,10 @@ export class QueryTaskDto extends IntersectionType(PaginationDto, DateRangeDto) 
 }
 ```
 
-### 2. Tasks Service (`src/modules/tasks/tasks.service.ts`)
+---
+
+## 5. Tasks Service (`src/modules/tasks/tasks.service.ts`)
+
 ```typescript
 import {
   ForbiddenException,
@@ -2118,6 +2323,8 @@ import { Role } from '../../common/enums/roles.enum';
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ─── CREATE TASK ──────────────────────────────────────────────────────────
+
   async create(userId: string, dto: CreateTaskDto) {
     const task = await this.prisma.task.create({
       data: {
@@ -2132,6 +2339,8 @@ export class TasksService {
     return { message: 'Task created successfully', data: task };
   }
 
+  // ─── GET ALL TASKS (with filters) ─────────────────────────────────────────
+
   async findAll(
     requestingUserId: string,
     requestingUserRole: string,
@@ -2139,7 +2348,12 @@ export class TasksService {
   ) {
     const params = buildPaginationParams(query);
     const dateFilter = buildDateRangeFilter('createdAt', query);
+    const dueDateFilter = buildDateRangeFilter('dueDate', {
+      startDate: query.startDate,
+      endDate: query.endDate,
+    });
 
+    // Role-based ownership scoping
     const ownerFilter =
       requestingUserRole === Role.ADMIN
         ? query.userId
@@ -2179,6 +2393,8 @@ export class TasksService {
     return buildPaginatedResult(tasks, total, params);
   }
 
+  // ─── GET ONE TASK ──────────────────────────────────────────────────────────
+
   async findOne(
     taskId: string,
     requestingUserId: string,
@@ -2197,6 +2413,8 @@ export class TasksService {
 
     return task;
   }
+
+  // ─── UPDATE TASK ──────────────────────────────────────────────────────────
 
   async update(
     taskId: string,
@@ -2230,6 +2448,8 @@ export class TasksService {
     return { message: 'Task updated successfully', data: updated };
   }
 
+  // ─── MARK AS COMPLETED (convenience endpoint) ─────────────────────────────
+
   async markCompleted(
     taskId: string,
     requestingUserId: string,
@@ -2239,6 +2459,8 @@ export class TasksService {
       status: 'COMPLETED',
     });
   }
+
+  // ─── DELETE TASK ──────────────────────────────────────────────────────────
 
   async remove(
     taskId: string,
@@ -2251,6 +2473,8 @@ export class TasksService {
 
     return { message: 'Task deleted successfully', data: null };
   }
+
+  // ─── TASK STATS (for user dashboard) ──────────────────────────────────────
 
   async getStats(userId: string, requestingUserRole: string) {
     const scopedUserId = requestingUserRole === Role.ADMIN ? undefined : userId;
@@ -2268,6 +2492,8 @@ export class TasksService {
     };
   }
 
+  // ─── HELPER ───────────────────────────────────────────────────────────────
+
   private assertOwnerOrAdmin(
     ownerId: string,
     requestingUserId: string,
@@ -2280,7 +2506,10 @@ export class TasksService {
 }
 ```
 
-### 3. Tasks Controller (`src/modules/tasks/tasks.controller.ts`)
+---
+
+## 6. Tasks Controller (`src/modules/tasks/tasks.controller.ts`)
+
 ```typescript
 import {
   Body,
@@ -2320,6 +2549,7 @@ import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
+  // POST /api/v1/tasks
   @Post()
   @RequirePermissions(Permission.CREATE_TASK)
   @ApiOperation({ summary: 'Create a new task' })
@@ -2330,6 +2560,8 @@ export class TasksController {
     return this.tasksService.create(user.sub, dto);
   }
 
+  // GET /api/v1/tasks
+  // Users see only their tasks; Admin can see all or filter by userId
   @Get()
   @RequirePermissions(Permission.READ_OWN_TASKS)
   @ApiOperation({
@@ -2347,12 +2579,14 @@ export class TasksController {
     };
   }
 
+  // GET /api/v1/tasks/stats
   @Get('stats')
   @ApiOperation({ summary: 'Get task statistics for the current user' })
   async getStats(@CurrentUser() user: JwtPayload) {
     return this.tasksService.getStats(user.sub, user.role);
   }
 
+  // GET /api/v1/tasks/:id
   @Get(':id')
   @RequirePermissions(Permission.READ_OWN_TASKS)
   @ApiOperation({ summary: 'Get a single task by ID' })
@@ -2363,6 +2597,7 @@ export class TasksController {
     return this.tasksService.findOne(id, user.sub, user.role);
   }
 
+  // PATCH /api/v1/tasks/:id
   @Patch(':id')
   @RequirePermissions(Permission.UPDATE_OWN_TASK)
   @ApiOperation({ summary: 'Update a task' })
@@ -2374,6 +2609,7 @@ export class TasksController {
     return this.tasksService.update(id, user.sub, user.role, dto);
   }
 
+  // PATCH /api/v1/tasks/:id/complete
   @Patch(':id/complete')
   @RequirePermissions(Permission.UPDATE_OWN_TASK)
   @HttpCode(HttpStatus.OK)
@@ -2385,6 +2621,7 @@ export class TasksController {
     return this.tasksService.markCompleted(id, user.sub, user.role);
   }
 
+  // DELETE /api/v1/tasks/:id
   @Delete(':id')
   @RequirePermissions(Permission.DELETE_OWN_TASK)
   @HttpCode(HttpStatus.OK)
@@ -2398,7 +2635,8 @@ export class TasksController {
 }
 ```
 
-#### `src/modules/tasks/tasks.module.ts`
+### `src/modules/tasks/tasks.module.ts`
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { TasksController } from './tasks.controller';
@@ -2411,7 +2649,10 @@ import { TasksService } from './tasks.service';
 export class TasksModule {}
 ```
 
+
 ---
+
+# Part 5: Root Application Wiring, Seeding & Running
 
 ## 10. Root Application Setup & Wiring
 
@@ -2569,3 +2810,4 @@ To seed the database, run:
 ```bash
 npm run seed
 ```
+
