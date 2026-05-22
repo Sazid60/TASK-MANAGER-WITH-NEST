@@ -8,9 +8,10 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
 import { buildPaginationParams, buildPaginatedResult } from '../../common/utils/pagination.util';
-import { buildDateRangeFilter } from '../../common/utils/date-range.util';
+
 import { Prisma } from '@prisma/client';
 import { Role } from '../../common/enums/roles.enum';
+import { buildDynamicQuery } from '../../common/utils/query-builder.util';
 
 @Injectable()
 export class TasksService {
@@ -40,47 +41,39 @@ export class TasksService {
     query: QueryTaskDto,
   ) {
     const params = buildPaginationParams(query);
-    const dateFilter = buildDateRangeFilter('createdAt', query);
-    const dueDateFilter = buildDateRangeFilter('dueDate', {
-      startDate: query.startDate,
-      endDate: query.endDate,
-    });
-
+    const filterableFields = ['userId', 'status', 'priority'];
+    const searchableFields = ['title', 'description'];
     // Role-based ownership scoping
-    const ownerFilter =
+    let filters: Record<string, any> =
       requestingUserRole === Role.ADMIN
         ? query.userId
           ? { userId: query.userId }
           : {}
         : { userId: requestingUserId };
 
-    const where: Prisma.TaskWhereInput = {
-      ...ownerFilter,
-      ...(query.status && { status: query.status }),
-      ...(query.priority && { priority: query.priority }),
-      ...(query.search && {
-        OR: [
-          { title: { contains: query.search, mode: 'insensitive' } },
-          { description: { contains: query.search, mode: 'insensitive' } },
-        ],
-      }),
-      ...dateFilter,
+    // Merge in status/priority if present
+    filters = {
+      ...filters,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.priority ? { priority: query.priority } : {}),
     };
 
-    const allowedSortFields = ['title', 'status', 'priority', 'dueDate', 'createdAt', 'updatedAt'];
-    const sortBy = allowedSortFields.includes(params.sortBy) ? params.sortBy : 'createdAt';
+    const prismaQuery = buildDynamicQuery({
+      query: { ...query, ...filters, skip: params.skip, limit: params.limit, sortBy: params.sortBy, sortOrder: params.sortOrder },
+      filterableFields,
+      searchableFields,
+      defaultSortBy: 'createdAt',
+      defaultSortOrder: 'desc',
+    });
 
     const [tasks, total] = await this.prisma.$transaction([
       this.prisma.task.findMany({
-        where,
+        ...prismaQuery,
         include: {
           user: { select: { id: true, name: true, email: true } },
         },
-        skip: params.skip,
-        take: params.limit,
-        orderBy: { [sortBy]: params.sortOrder },
       }),
-      this.prisma.task.count({ where }),
+      this.prisma.task.count({ where: prismaQuery.where }),
     ]);
 
     return buildPaginatedResult(tasks, total, params);
