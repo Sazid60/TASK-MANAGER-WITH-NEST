@@ -8,18 +8,9 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
+import { ErrorResponse } from '../interfaces/error_response.interface';
 
-interface ErrorResponse {
-  success: false;
-  statusCode: number;
-  message: string;
-  error: {
-    code?: string;
-    details?: unknown;
-    path?: string;
-    timestamp: string;
-  };
-}
+
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -32,6 +23,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const { statusCode, message, code, details } = this.resolveException(exception);
 
+    const isDev = process.env.NODE_ENV === 'development';
     const errorResponse: ErrorResponse = {
       success: false,
       statusCode,
@@ -39,15 +31,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error: {
         code,
         details,
-        path: request.url,
+        ...(isDev ? { path: request.url } : {}),
         timestamp: new Date().toISOString(),
       },
     };
 
-    this.logger.error(
-      `[${request.method}] ${request.url} → ${statusCode}: ${message}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    if (isDev) {
+      this.logger.error(
+        `[${request.method}] ${request.url} → ${statusCode}: ${message}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
     response.status(statusCode).json(errorResponse);
   }

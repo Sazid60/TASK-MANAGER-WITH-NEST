@@ -30,8 +30,6 @@ export class AuthController {
   constructor(private readonly authService: AuthService) { }
 
   private setCookies(res: Response, accessToken?: string, refreshToken?: string) {
-    res.clearCookie('adminRefreshToken');
-
     if (accessToken) {
       res.cookie('accessToken', accessToken, {
         httpOnly: true,
@@ -54,10 +52,9 @@ export class AuthController {
   // POST /api/v1/auth/register
   @Public()
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Register a new user account' })
-  @ApiResponse({ status: 201, description: 'User registered successfully' })
-  @ApiResponse({ status: 409, description: 'Email already exists' })
+  @ApiResponse({ status: HttpStatus.CREATED, description: 'User registered successfully' })
+  @ApiResponse({ status: HttpStatus.CONFLICT, description: 'Email already exists' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
@@ -66,7 +63,6 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Login with credentials' })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const response = await this.authService.login(dto);
